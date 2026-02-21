@@ -1,0 +1,4 @@
+# Key with no value on same line (block style)
+block_key:
+  - one
+  - two

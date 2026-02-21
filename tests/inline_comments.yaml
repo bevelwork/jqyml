@@ -1,0 +1,6 @@
+# Parser strips inline comments (space + # to EOL)
+host: localhost
+port: 8080
+description: main server
+option: value
+debug: on

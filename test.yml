@@ -1,0 +1,10 @@
+objects:
+  should: true
+  also: 10
+  be: "supported"
+  # not you
+this:
+  - is # This should be ignored
+  - my
+  - yaml
+  - file

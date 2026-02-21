@@ -1,0 +1,9 @@
+objects:
+  should: true
+  also: 10
+  be: "supported"
+this:
+  - is
+  - my
+  - yaml
+  - file
