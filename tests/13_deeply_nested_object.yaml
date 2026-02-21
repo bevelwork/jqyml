@@ -1,0 +1,11 @@
+# Object nested 10 levels deep
+a:
+  b:
+    c:
+      d:
+        e:
+          f:
+            g:
+              h:
+                i:
+                  j: leaf

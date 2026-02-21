@@ -1,0 +1,5 @@
+# Object as map[string]string: keys and values are plain strings
+app: myapp
+env: prod
+tier: frontend
+version: "1.0"

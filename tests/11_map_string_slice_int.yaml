@@ -1,0 +1,10 @@
+# map[string][]int: keys are strings, values are lists of integers
+alice:
+  - 1
+  - 2
+  - 3
+bob:
+  - 4
+  - 5
+charlie:
+  - 10

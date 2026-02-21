@@ -1,0 +1,10 @@
+# number vs "stringed" number: quoted stays string, unquoted becomes number
+hello_string: "10"
+hello_number: 10
+count_string: "42"
+count_number: 42
+# floats: 10.0 is number, "10.0" is string
+float_string: "10.0"
+float_number: 10.0
+pi_string: "3.14"
+pi_number: 3.14

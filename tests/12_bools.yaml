@@ -1,0 +1,18 @@
+# YAML 1.2: only true and false (case-sensitive) are booleans; Yes/No/On/Off are strings
+# booleans (case-sensitive)
+true_unquoted: true
+false_unquoted: false
+# these are strings in 1.2
+yes_unquoted: yes
+on_unquoted: on
+Yes_unquoted: Yes
+TRUE_unquoted: TRUE
+no_unquoted: no
+off_unquoted: off
+NO_unquoted: NO
+FALSE_unquoted: FALSE
+# quoted always strings
+true_quoted: "true"
+false_quoted: "false"
+yes_quoted: "yes"
+no_quoted: "no"

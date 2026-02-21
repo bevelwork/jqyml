@@ -1,0 +1,5 @@
+# List of empty lists: - [] becomes []; flow-style [[][][]] becomes [[],[],[]]
+items:
+  - [[][][][[][][[][][][]]]]
+  - []
+  - []

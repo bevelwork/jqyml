@@ -1,0 +1,7 @@
+# Test that anchor usage is rejected
+defaults: &defaults
+  host: localhost
+  port: 80
+dev:
+  <<: *defaults
+  port: 8080
