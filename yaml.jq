@@ -32,42 +32,81 @@ def unquote_yaml_string:
       else $s end
   end;
 
-# YAML 1.2: only true and false (case-sensitive) are booleans; Yes/No/On/Off etc. are strings
-def _parse_bool:
-  if type != "string" then null else
-    if . == "true" then true
-    elif . == "false" then false
-    else null end
+# ---------------------------------------------------------------------------
+# Detection: classify what type a value is (returns a type label).
+# ---------------------------------------------------------------------------
+
+# Key/value scalar: quoted string, number, bool, embedded JSON ([...] or {...}), or string
+def detect_key_value_type:
+  if type != "string" then "string" else
+    if (length >= 2) and ((startswith("\"") and endswith("\"")) or (startswith("'") and endswith("'"))) then "quoted_string"
+    elif (try tonumber catch null) != null then "number"
+    elif (if . == "true" then true elif . == "false" then false else null end) != null then "bool"
+    elif (length >= 2) and ((startswith("[") and endswith("]")) or (startswith("{") and endswith("}"))) then "embedded_json"
+    else "string"
+    end
   end;
 
-# Coerce key_value: quoted -> string; unquoted -> number, then bool, else string
-def coerce_value:
+# List item value: empty list "[]", embedded list "[[]...]", or string
+def detect_list_item_type:
+  if type != "string" then "string" else
+    if . == "[]" then "empty_list"
+    elif (startswith("[") and endswith("]") and test("^[\\[\\]\\s]+$")) then "embedded_list"
+    else "string"
+    end
+  end;
+
+# ---------------------------------------------------------------------------
+# Handlers: given raw string (and type), return the coerced value.
+# ---------------------------------------------------------------------------
+
+def string_handler:  unquote_yaml_string;
+def number_handler:  tonumber;
+def bool_handler:   if . == "true" then true else false end;
+def default_string_handler: .;
+
+# Try to parse string as JSON; return parsed value or original string
+def try_parse_json:
   if type != "string" then . else
     . as $s
-    | if ($s | length) >= 2 and (($s | startswith("\"")) and ($s | endswith("\"")) or ($s | startswith("'")) and ($s | endswith("'"))) then
-        $s | unquote_yaml_string
-      else
-        ($s | try tonumber catch null) as $n
-        | if $n != null then $n
-          else ($s | _parse_bool) as $b
-          | if $b != null then $b else $s end
-          end
-      end
+    | if ($s | length >= 2) and (($s | startswith("[")) or ($s | startswith("{"))) then
+        (try ($s | fromjson) catch null) as $parsed
+        | if $parsed != null then $parsed else $s end
+      else $s
+    end
   end;
 
-# Parse flow-style embedded lists: "[[][][]]" -> [[],[],[]] by inserting commas then fromjson
-def _parse_embedded_lists:
+def empty_list_handler:   [];
+def embedded_list_handler:
+  (gsub("\\]\\s*\\["; "], [") | try fromjson catch null) as $parsed
+  | if $parsed != null then $parsed else . end;
+
+# ---------------------------------------------------------------------------
+# Coerce: detect type, then dispatch to the right handler.
+# ---------------------------------------------------------------------------
+
+def coerce_value:
   if type != "string" then . else
-    (gsub("\\]\\s*\\["; "], [") | try fromjson catch null) as $parsed
-    | if $parsed != null then $parsed else . end
+    . as $raw
+    | ($raw | detect_key_value_type) as $t
+    | (if   $t == "quoted_string" then $raw | string_handler
+       elif $t == "number"        then $raw | number_handler
+       elif $t == "bool"         then $raw | bool_handler
+       elif $t == "embedded_json" then (try ($raw | fromjson) catch null) as $parsed | if $parsed != null then $parsed else $raw end
+       else                       $raw | default_string_handler
+       end) as $result
+    # After quoted string unquote, value may be a string that looks like JSON; try parsing once
+    | if ($result | type) == "string" then $result | try_parse_json else $result end
   end;
 
-# List item value: "[]" -> []; "[[]...]" -> parsed nested arrays; else leave as-is
 def coerce_list_item_value:
   if type != "string" then . else
-    if . == "[]" then []
-    elif (startswith("[") and endswith("]") and (test("^[\\[\\]\\s]+$"))) then _parse_embedded_lists
-    else . end
+    . as $raw
+    | ($raw | detect_list_item_type) as $t
+    | if   $t == "empty_list"   then empty_list_handler
+      elif $t == "embedded_list" then $raw | embedded_list_handler
+      else                         $raw | default_string_handler
+      end
   end;
 
 # Safe split: only split strings. split/1 only; no second arg (jq split separator must be string)
@@ -77,8 +116,46 @@ def split_colon2(s):
   (s | if type != "string" then [s, null] else split(":") end)
   | if length >= 2 then [.[0], (.[1:] | join(":"))] else [.[0], null] end;
 
-# Parse a single line: returns { type, key, value, indent } or null
-# Use stripped content for type/key/value so indented lines (e.g. "  should: true") match
+# ---------------------------------------------------------------------------
+# Line detection: classify what kind of YAML line this is.
+# ---------------------------------------------------------------------------
+
+def detect_line_type:
+  if type != "string" then "scalar" else
+    . as $stripped
+    | if ($stripped | startswith("- ")) or ($stripped | test("^-\\s*$")) then "list_item"
+      elif ($stripped | test("^[a-zA-Z0-9_-]+:\\s*$")) then "key"
+      elif ($stripped | test("^[a-zA-Z0-9_-]+:\\s*.+")) then "key_value"
+      else "scalar"
+      end
+  end;
+
+# ---------------------------------------------------------------------------
+# Line handlers: given stripped line + indent, return { type, key?, value?, indent }.
+# ---------------------------------------------------------------------------
+
+def list_item_line_handler($indent):
+  { type: "list_item", value: ((if startswith("- ") then .[2:] else .[1:] end) | strip | strip_inline_comment | unquote_yaml_string), indent: $indent };
+
+def key_line_handler($indent):
+  { type: "key", key: (split_colon(.)[0] | strip), value: null, indent: $indent };
+
+def key_value_line_handler($indent):
+  (split_colon2(.) | .[0] |= strip | .[1] |= (if . != null then (strip | strip_inline_comment) else . end)) as $parts
+  | { type: "key_value", key: $parts[0], value: $parts[1], indent: $indent };
+
+def scalar_line_handler($indent):
+  { type: "scalar", value: (strip_inline_comment | unquote_yaml_string), indent: $indent };
+
+# Reject lines that look like JSON (quoted key or bare { / [) — we expect YAML key: value
+def reject_json_like_line:
+  if startswith("\"") or startswith("'") then
+    error("invalid YAML: line looks like JSON (expected key: value format, not \"key\": value)")
+  elif startswith("{") or startswith("[") then
+    error("invalid YAML: line looks like JSON (expected key: value format)")
+  else . end;
+
+# Parse a single line: detect line type, then call the appropriate handler.
 def parse_line:
   if type != "string" then error("parse_line expects string, got \(type)") else . end
   | . as $line
@@ -86,68 +163,122 @@ def parse_line:
   | ($line | get_indent) as $indent
   | $stripped
   | select(length > 0)
-  | if $stripped | startswith("- ") then
-      { type: "list_item", value: ($stripped | .[2:] | strip | strip_inline_comment | unquote_yaml_string), indent: $indent }
-    elif $stripped | test("^[a-zA-Z0-9_-]+:\\s*$") then
-      { type: "key", key: (split_colon($stripped)[0] | strip), value: null, indent: $indent }
-    elif $stripped | test("^[a-zA-Z0-9_-]+:\\s*.+") then
-      (split_colon2($stripped) | .[0] |= strip | .[1] |= (if . != null then (strip | strip_inline_comment) else . end)) as $parts
-      | { type: "key_value", key: $parts[0], value: $parts[1], indent: $indent }
-    else
-      { type: "scalar", value: ($stripped | strip_inline_comment | unquote_yaml_string), indent: $indent }
+  | reject_json_like_line
+  | . as $s
+  | ($s | detect_line_type) as $line_t
+  | if   $line_t == "list_item"  then $s | list_item_line_handler($indent)
+    elif $line_t == "key"        then $s | key_line_handler($indent)
+    elif $line_t == "key_value"  then $s | key_value_line_handler($indent)
+    else                          $s | scalar_line_handler($indent)
     end;
 
-# Build a list of parsed line objects (skip empty/comments)
+# Build a list of parsed line objects (include blank lines for block scalars; skip comments). Each has .raw for block scalar content.
 def parsed_lines:
   lines
-  | map(select(length > 0 and (startswith("#") | not)))
-  | map(parse_line);
+  | map(select(startswith("#") | not))
+  | map(if (strip | length) == 0 then {type: "blank", indent: (get_indent), value: "", raw: .} else (. as $raw | parse_line | . + {raw: $raw}) end);
+
+# Block scalar: append one content line. Use .raw so literal content is not altered (e.g. # is not stripped as comment).
+def _block_append($line):
+  (if $line.type == "blank" then {content: "", indent: $line.indent, blank: true}
+   else {content: (if $line.raw then ($line.raw | if $line.indent > 0 then .[$line.indent:] else . end) else (if $line.type == "key_value" then ($line.key + ": " + $line.value) else ($line.value // "") end) end), indent: $line.indent, blank: false}
+   end) as $entry
+  | .block_scalar.lines += [$entry]
+  | (if ($entry.blank | not) and .block_scalar.content_indent == null then .block_scalar.content_indent = $line.indent
+     elif ($entry.blank | not) and $line.indent < .block_scalar.content_indent then .block_scalar.content_indent = $line.indent
+     else . end);
+
+# Block scalar: build string from lines (literal | or folded >)
+def _block_build_string:
+  .block_scalar as $bs
+  | if $bs.type == "literal" then
+      [$bs.lines[] | if .blank then "" else .content end] | join("\n")
+    else
+      ($bs.content_indent // 0) as $ci
+      | reduce range(0; $bs.lines | length) as $i (""; . as $acc
+          | ($bs.lines[$i]) as $ln
+          | if $ln.blank then $acc + "\n"
+            elif $ln.indent > $ci then $acc + "\n" + $ln.content
+            else (if $i > 0 and ($bs.lines[$i - 1].blank | not) then $acc + " " else $acc end) + $ln.content
+            end)
+    end;
+
+# Block scalar: write key and clear state
+def _finalize_block:
+  _block_build_string as $str
+  | .stack[0].obj[.block_scalar.key] = $str
+  | .block_scalar = null;
 
 # Reduce parsed lines into a single JSON value (object or array).
 # Stack entries: {obj: object, indent: number, key: string}. stack[0] is current (deepest).
 # Pop stack until top.indent < line.indent so indented lines nest under the right parent.
-# Propagate current.obj back to parent.obj[current.key] after updates (jq is immutable).
 def _pop_until_indent($line_indent):
   if length <= 1 then .
   elif .[0].indent >= $line_indent then .[1:] | _pop_until_indent($line_indent)
   else . end;
 
+# One reduce iteration: state and line -> new state
+def _process_line($line):
+  . as $state
+  | (if $state.block_scalar != null and ($line.indent > $state.block_scalar.key_indent or $line.type == "blank") then
+       $state | _block_append($line)
+     elif $state.block_scalar != null and $line.indent <= $state.block_scalar.key_indent then
+       $state | _finalize_block
+     else
+       $state
+     end) as $state_in
+  | if $state.block_scalar != null and ($line.indent > $state.block_scalar.key_indent or $line.type == "blank") then
+      $state_in
+    else
+      $state_in
+      | if ($line.type == "list_item" and $line.indent == 0 and (($line.value | strip) == "") and (.stack | length) == 2 and .root_is_list) then
+          .stack[1].obj = .stack[1].obj + [.stack[0].obj]
+          | .stack[0].obj = {}
+        else
+          .stack = (.stack | _pop_until_indent($line.indent))
+          | . as $state2
+          | if ($line.type == "list_item" and $line.indent == 0 and (($line.value | strip) == "") and ($state2.stack | length) == 1) then
+              .root_is_list = true
+              | .stack = [{obj: {}, indent: 0, key: null}, {obj: [], indent: -1, key: null}]
+            elif $line.type == "key" then
+              .stack[0].obj[$line.key] = {}
+              | .stack = ([{obj: .stack[0].obj[$line.key], indent: $line.indent, key: $line.key}] + .stack)
+              | .last_key = $line.key
+            elif $line.type == "key_value" then
+              (($line.value | strip) | test("^[|>]")) as $is_block_scalar
+              | (($line.value | strip) | if test("^\\|") then "literal" else "folded" end) as $block_type
+              | if $is_block_scalar then
+                   .block_scalar = {key: $line.key, type: $block_type, key_indent: $line.indent, content_indent: null, lines: []}
+                 else
+                   .stack[0].obj[$line.key] = ($line.value | coerce_value)
+                   | .last_key = $line.key
+                   | (if (.stack | length) > 1 and .stack[0].key != null then reduce range(0; .stack | length - 1) as $i (.; .stack[$i + 1].obj[.stack[$i].key] = .stack[$i].obj) else . end)
+                 end
+            elif $line.type == "list_item" then
+              ($line.value | coerce_list_item_value) as $item_val
+              | (if (.stack | length) > 1 then .stack[1].obj[$state2.last_key] else .stack[0].obj[$state2.last_key] end) as $cur
+              | if (.stack | length) > 1 then
+                  .stack[1].obj[$state2.last_key] = (if $cur == null or ($cur | type) == "object" and ($cur | keys | length) == 0 then [$item_val] else $cur + [$item_val] end)
+                else
+                  .stack[0].obj[$state2.last_key] = (if $cur == null or ($cur | type) == "object" and ($cur | keys | length) == 0 then [$item_val] else $cur + [$item_val] end)
+                end
+              | (if (.stack | length) > 1 then .stack = .stack[1:] else . end)
+              | .last_key = $state2.last_key
+            else
+              .
+            end
+        end
+    end;
+
 def parse_yaml:
   (if type == "string" then . else "" end) as $raw
   | $raw | parsed_lines as $lines
   | reduce $lines[] as $line (
-      { stack: [{obj: {}, indent: -1, key: null}], last_key: null };
-      . as $state
-      | .stack = ($state.stack | _pop_until_indent($line.indent))
-      | . as $state2
-      | if $line.type == "key" then
-          $state2
-          | .stack[0].obj[$line.key] = {}
-          | .stack = ([{obj: .stack[0].obj[$line.key], indent: $line.indent, key: $line.key}] + .stack)
-          | .last_key = $line.key
-        elif $line.type == "key_value" then
-          $state2
-          | .stack[0].obj[$line.key] = ($line.value | coerce_value)
-          | .last_key = $line.key
-          # Propagate full stack so root sees nested updates (jq is immutable)
-          | (if (.stack | length) > 1 then reduce range(0; .stack | length - 1) as $i (.; .stack[$i + 1].obj[.stack[$i].key] = .stack[$i].obj) else . end)
-        elif $line.type == "list_item" then
-          # List items belong to the parent's last_key (the key that introduced the list block)
-          ($line.value | coerce_list_item_value) as $item_val
-          | $state2
-          | (if (.stack | length) > 1 then .stack[1].obj[$state2.last_key] else .stack[0].obj[$state2.last_key] end) as $cur
-          | (if (.stack | length) > 1 then
-              .stack[1].obj[$state2.last_key] = (if $cur == null or ($cur | type) == "object" and ($cur | keys | length) == 0 then [$item_val] else $cur + [$item_val] end)
-            else
-              .stack[0].obj[$state2.last_key] = (if $cur == null or ($cur | type) == "object" and ($cur | keys | length) == 0 then [$item_val] else $cur + [$item_val] end)
-            end)
-          | (if (.stack | length) > 1 then .stack = .stack[1:] else . end)
-          | .last_key = $state2.last_key
-        else
-          $state2
-        end
+      { stack: [{obj: {}, indent: -1, key: null}], last_key: null, root_is_list: false, block_scalar: null };
+      _process_line($line)
     )
-  | .stack[.stack | length - 1].obj;
+  | (if .block_scalar != null then _finalize_block else . end)
+  | if .root_is_list then .stack[1].obj + [.stack[0].obj] else .stack[.stack | length - 1].obj end;
 
 # Convenience: parse YAML string and emit JSON
 def parse_yaml_string:

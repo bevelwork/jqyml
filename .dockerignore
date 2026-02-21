@@ -1,0 +1,7 @@
+.git
+.gitignore
+tests
+Makefile
+*.md
+docker-compose.yml
+gateway

@@ -1,0 +1,11 @@
+services:
+  jqyml:
+    build: .
+  caddy:
+    image: caddy:alpine
+    ports:
+      - "0.0.0.0:8080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - jqyml

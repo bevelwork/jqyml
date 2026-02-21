@@ -1,0 +1,25 @@
+# Example 2.13: literal (|), newlines preserved
+ascii_art: |
+  \//||\/||
+  // ||  ||__
+
+# Literal block: # and rest of line are preserved (not treated as comment)
+snippet: |
+  are you
+  todya ---->
+
+# Example 2.14: folded (>), newlines become spaces
+quote: >
+  Mark McGwire's
+  year was crippled
+  by a knee injury.
+
+# Example 2.15: folded with more-indented and blank lines preserved
+stats: >
+ Sammy Sosa completed another
+ fine season with great stats.
+
+   63 Home Runs
+   0.288 Batting Average
+
+ What a year!

@@ -1,0 +1,4 @@
+# Key values with embedded JSON: [...] and {...} are parsed as JSON, not left as strings
+tool: hello
+how: ["are", "you"]
+config: {"key": "value", "count": 2}
