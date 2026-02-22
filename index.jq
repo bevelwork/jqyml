@@ -1,8 +1,7 @@
 # -----------------------------------------------------------------------------
-# index.jq — Static HTML for the front page (no visitor counter, no conditionals).
-# Used only for: local development via `make run` (jq -n -r -f index.jq).
-# Production serves index.jqx via the jqx engine (with counter and <If>). There
-# is no fallback to this file; if index.jqx returns empty, the server returns 500.
+# index.jq — Static HTML for the front page (visitor + conversion count; no <If>).
+# Used for: local development via `make run` and fallback when index.jqx returns empty.
+# Production normally serves index.jqx via the jqx engine (counter, conversion count, <If>).
 # -----------------------------------------------------------------------------
 [
   "<!DOCTYPE html>",
@@ -36,6 +35,7 @@
   "    header h1 { margin: 0; font-size: 1.25rem; }",
   "    .counter-box { padding: 0.5rem 0; font-size: 0.875rem; }",
   "    .counter-box .count { font-weight: 600; }",
+  "    .convert-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }",
   "  </style>",
   "</head>",
   "<body>",
@@ -58,7 +58,10 @@
   "        <button type=\"button\" data-example=\"keys-with-spaces\">Keys with spaces</button>",
   "      </div>",
   "    </div>",
-  "    <button type=\"submit\">Convert</button>",
+  "    <div class=\"convert-row\">",
+  "      <button type=\"submit\">Convert</button>",
+  "      <span class=\"counter-box\">Conversions: <span id=\"conversion-count\" class=\"count\" data-transforms=\"0\">—</span></span>",
+  "    </div>",
   "  </form>",
   "  <div id=\"result\"></div>",
   "  <script>",
@@ -89,13 +92,18 @@
   "          if (!x.ok) pre.classList.add(\"error\");",
   "          result.innerHTML = \"\";",
   "          result.appendChild(pre);",
+  "          if (x.ok) {",
+  "            var el = document.getElementById(\"conversion-count\");",
+  "            if (el) { var n = parseInt(el.getAttribute(\"data-transforms\") || \"0\", 10) + 1; el.setAttribute(\"data-transforms\", n); el.textContent = n + \" conversion\" + (n !== 1 ? \"s\" : \"\"); }",
+  "          }",
   "        })",
   "        .catch(function(err) { result.innerHTML = '<pre class=\"error\">' + err + '</pre>'; });",
   "    };",
-  "    function showCount(n) { document.getElementById(\"count\").textContent = typeof n === \"number\" ? n : \"—\"; }",
+  "    function showCount(n) { document.getElementById(\"count\").textContent = (typeof n === \"number\" ? (n === 0 ? \"No visitors\" : n) : \"—\"); }",
+  "    function showConversionCount(n) { var t = (typeof n === \"number\" ? (n === 0 ? \"No conversions\" : n + \" conversion\" + (n !== 1 ? \"s\" : \"\")) : \"—\"); var el = document.getElementById(\"conversion-count\"); if (el) { el.textContent = t; if (typeof n === \"number\") el.setAttribute(\"data-transforms\", n); } }",
   "    fetch(\"/state\", { method: \"POST\", headers: { \"Content-Type\": \"application/json\" }, body: JSON.stringify({ counter: 1 }) })",
   "      .then(function(r) { return r.ok ? r.json() : null; })",
-  "      .then(function(s) { if (s && typeof s.counter === \"number\") showCount(s.counter); })",
+  "      .then(function(s) { if (s) { if (typeof s.counter === \"number\") showCount(s.counter); if (typeof s.transforms === \"number\") showConversionCount(s.transforms); } })",
   "      .catch(function() {});",
   "  </script>",
   "</body>",

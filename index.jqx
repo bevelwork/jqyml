@@ -162,11 +162,6 @@
             gap: 0.75rem;
             flex-wrap: wrap;
         }
-
-        .transform-count {
-            font-size: 0.875rem;
-            color: #555;
-        }
     </style>
 </head>
 
@@ -189,7 +184,7 @@
         </div>
         <div class="convert-row">
             <button type="submit">Convert</button>
-            <span id="transform-count" class="transform-count" data-transforms="{transforms}"><If transforms_one>{transforms} transform</If><If transforms_plural>{transforms} transforms</If></span>
+            <span class="counter-box">Conversions: <span id="conversion-count" class="count" data-transforms="{transforms}"><If transforms_one>1 conversion</If><If transforms_plural>{transforms} conversions</If></span></span>
         </div>
     </form>
     <div id="result"></div>
@@ -222,20 +217,21 @@
                     result.innerHTML = "";
                     result.appendChild(pre);
                     if (x.ok) {
-                        var el = document.getElementById("transform-count");
+                        var el = document.getElementById("conversion-count");
                         if (el) {
                             var n = parseInt(el.getAttribute("data-transforms") || "0", 10) + 1;
                             el.setAttribute("data-transforms", n);
-                            el.textContent = n + " transform" + (n !== 1 ? "s" : "");
+                            el.textContent = n + " conversion" + (n !== 1 ? "s" : "");
                         }
                     }
                 })
                 .catch(function (err) {result.innerHTML = '<pre class="error">' + err + '</pre>';});
         };
         function showCount(n) {document.getElementById("count").textContent = (typeof n === "number" ? (n === 0 ? "No visitors" : n) : "—");}
+        function showConversionCount(n) {var t = typeof n === "number" ? (n === 0 ? "No conversions" : n + " conversion" + (n !== 1 ? "s" : "")) : "—"; var el = document.getElementById("conversion-count"); if (el) el.textContent = t;}
         fetch("/state", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({counter: 1})})
             .then(function (r) {return r.ok ? r.json() : null;})
-            .then(function (s) {if (s && typeof s.counter === "number") showCount(s.counter);})
+            .then(function (s) {if (s) { if (typeof s.counter === "number") showCount(s.counter); if (typeof s.transforms === "number") showConversionCount(s.transforms); }})
             .catch(function () { });
     </script>
 </body>

@@ -109,9 +109,11 @@ test-server:
 	code=$$(curl -s -o /tmp/jqyml_index -w "%{http_code}" http://127.0.0.1:$(TEST_PORT)/ 2>/dev/null); \
 	if [ "$$code" != "200" ]; then echo "  FAILED: GET / returned $$code (expected 200)"; failed=$$((failed+1)); fi; \
 	grep -q '<!DOCTYPE html>' /tmp/jqyml_index 2>/dev/null || { echo "  FAILED: GET / body should contain '<!DOCTYPE html>' (got error output?)"; cat /tmp/jqyml_index >&2; failed=$$((failed+1)); }; \
+	grep -q 'Visitor count' /tmp/jqyml_index 2>/dev/null || { echo "  FAILED: GET / body should contain 'Visitor count' (state in header)"; failed=$$((failed+1)); }; \
+	grep -q 'Conversions:' /tmp/jqyml_index 2>/dev/null || { echo "  FAILED: GET / body should contain 'Conversions:' (conversion count state)"; failed=$$((failed+1)); }; \
 	kill $$pid 2>/dev/null || true; \
 	rm -f /tmp/jqyml_big /tmp/jqyml_413 /tmp/jqyml_404 /tmp/jqyml_state /tmp/jqyml_index /tmp/jqyml_server.log; \
-	if [ $$failed -eq 0 ]; then echo "test-server: 413, 404, GET /state, GET / OK"; else echo "$$failed check(s) failed"; exit 1; fi
+	if [ $$failed -eq 0 ]; then echo "test-server: 413, 404, GET /state, GET / OK (index shows Visitor count + Conversions)"; else echo "$$failed check(s) failed"; exit 1; fi
 
 # Speed test: run run.jq on SPEED_YAML ITERATIONS times; report total and per-iteration time.
 # Override: make speed ITERATIONS=1000 SPEED_YAML=tests/14_anchors_used.yaml
