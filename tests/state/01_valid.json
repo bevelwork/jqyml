@@ -1,0 +1,9 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/state",
+    "headers": { "content-type": "application/json" },
+    "body": { "counter": 1 }
+  },
+  "current_state": { "counter": 0 }
+}

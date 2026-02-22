@@ -1,7 +1,8 @@
 # jqyml: jq-based YAML parser service (HTTP)
 FROM alpine:3.19
-RUN apk add --no-cache jq python3
+RUN apk add --no-cache jq python3 py3-yaml
 WORKDIR /app
-COPY yaml.jq run.jq index.jq index_old.jq 404.jq parse.jq server.py /app/
+COPY yaml.jq run.jq index.jq index_old.jq jqx.jq 404.jqx 400.jqx 401.jqx parse.jq state.jq server.py /app/
+COPY state/ /app/state/
 EXPOSE 8888
 CMD ["python3", "/app/server.py"]
