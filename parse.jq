@@ -9,6 +9,8 @@
     { action: "index_old" }
   elif .method == "GET" and $path == "/admin" then
     { action: "unauthorized" }
+  elif .method == "GET" and $path == "/state" then
+    { action: "state_read" }
   elif .method == "POST" and $path == "/" then
     { action: "convert", body: (.body // "") }
   elif .method == "POST" and $path == "/state" then

@@ -56,7 +56,7 @@ test-jqx:
 	[ $$failed -eq 0 ] && echo "All jqx tests passed." || { echo "$$failed jqx test(s) failed."; exit 1; }
 
 up:
-	docker compose up -d --build
+	docker compose build jqyml && docker compose up -d
 
 down:
 	docker compose down

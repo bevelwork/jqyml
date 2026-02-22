@@ -10,6 +10,7 @@ import yaml
 JQ = ["jq", "-L", "/app"]
 RUN_JQ = JQ + ["-R", "-s", "-f", "/app/run.jq"]
 INDEX_JQ = JQ + ["-n", "-r", "-f", "/app/index.jq"]
+INDEX_JQX = JQ + ["-r", "--rawfile", "tmpl", "/app/index.jqx", "-f", "/app/jqx.jq"]
 INDEX_OLD_JQ = JQ + ["-n", "-r", "-f", "/app/index_old.jq"]
 STATE_JQ = JQ + ["-f", "/app/state.jq"]
 NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", "/app/404.jqx", "-f", "/app/jqx.jq"]
@@ -27,6 +28,7 @@ UNAUTHORIZED_VARS = {
 }
 PARSE_JQ = JQ + ["-f", "/app/parse.jq"]
 STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state", "state.yml")
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -98,13 +100,61 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
+    def _get_current_state(self) -> dict:
+        """Return current state (e.g. from state.yml); default counter 0."""
+        if not os.path.isfile(STATE_PATH):
+            return {"counter": 0}
+        try:
+            with open(STATE_PATH) as f:
+                yaml_raw = f.read()
+            r = subprocess.run(
+                RUN_JQ,
+                input=yaml_raw,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd="/app",
+            )
+            if r.returncode != 0:
+                return {"counter": 0}
+            state = json.loads(r.stdout)
+            if "counter" not in state:
+                state["counter"] = 0
+            return state
+        except Exception:
+            return {"counter": 0}
+
     def do_GET(self):
         route = self.parse_route("GET", self.path, "")
         if route["action"] == "index":
             try:
-                r = subprocess.run(INDEX_JQ, capture_output=True, text=True, timeout=5, cwd="/app")
+                state = self._get_current_state()
+                count = state.get("counter", 0)
+                index_vars = {
+                    "count": count,
+                    "count_is_zero": count == 0,
+                    "count_gt_0": count > 0,
+                }
+                r = subprocess.run(
+                    INDEX_JQX,
+                    input=json.dumps(index_vars),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=APP_DIR,
+                )
                 out = r.stdout if r.returncode == 0 else r.stderr or "error"
                 status = 200 if r.returncode == 0 else 500
+                if r.returncode == 0 and (not out or not out.strip()):
+                    r = subprocess.run(
+                        INDEX_JQ,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        cwd=APP_DIR,
+                    )
+                    out = r.stdout if r.returncode == 0 else r.stderr or "error"
+                    status = 200 if r.returncode == 0 else 500
             except Exception as e:
                 out, status = str(e), 500
             self.send_response(status)
@@ -124,6 +174,18 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(out.encode("utf-8"))
         elif route["action"] == "unauthorized":
             self.send_401()
+        elif route["action"] == "state_read":
+            try:
+                state = self._get_current_state()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(state).encode())
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": str(e)}).encode())
         else:
             self.send_404()
 
