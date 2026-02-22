@@ -1,5 +1,9 @@
-# Static fallback front page (no visitor counter). Used when index.jqx returns empty.
-# Primary template is index.jqx (jqx engine with conditional counter). Run with: jq -n -r -f index.jq
+# -----------------------------------------------------------------------------
+# index.jq — Static HTML for the front page (no visitor counter, no conditionals).
+# Used only for: local development via `make run` (jq -n -r -f index.jq).
+# Production serves index.jqx via the jqx engine (with counter and <If>). There
+# is no fallback to this file; if index.jqx returns empty, the server returns 500.
+# -----------------------------------------------------------------------------
 [
   "<!DOCTYPE html>",
   "<html lang=\"en\">",
@@ -18,6 +22,11 @@
   "    textarea:focus { outline: none; border-color: #333; }",
   "    button { align-self: start; padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; color: #fff; background: #333; border: none; border-radius: 6px; cursor: pointer; }",
   "    button:hover { background: #555; }",
+  "    .examples { margin-top: 0.5rem; margin-bottom: 0.5rem; }",
+  "    .examples-label { font-size: 0.875rem; font-weight: 500; color: #555; margin-bottom: 0.35rem; display: block; }",
+  "    .examples-btns { display: flex; flex-wrap: wrap; gap: 0.35rem; }",
+  "    .examples-btns button { background: #e0e0e0; color: #1a1a1a; padding: 0.35rem 0.6rem; font-size: 0.8125rem; }",
+  "    .examples-btns button:hover { background: #ccc; }",
   "    #result { margin-top: 1rem; }",
   "    #result pre { margin: 0; padding: 1rem; font-size: 0.8125rem; background: #1a1a1a; color: #e0e0e0; border-radius: 6px; overflow: auto; white-space: pre-wrap; word-break: break-all; }",
   "    #result .error { background: #4a1a1a; color: #f0c0c0; }",
@@ -38,10 +47,33 @@
   "  <form id=\"f\">",
   "    <label for=\"yaml\">YAML</label>",
   "    <textarea id=\"yaml\" name=\"yaml\" placeholder=\"e.g.&#10;foo: 1&#10;bar: hello\"></textarea>",
+  "    <div class=\"examples\">",
+  "      <span class=\"examples-label\">Load example:</span>",
+  "      <div class=\"examples-btns\">",
+  "        <button type=\"button\" data-example=\"simple\">Simple</button>",
+  "        <button type=\"button\" data-example=\"anchors\">Anchors &amp; merge</button>",
+  "        <button type=\"button\" data-example=\"lists\">Lists &amp; nested</button>",
+  "        <button type=\"button\" data-example=\"block\">Block scalar</button>",
+  "        <button type=\"button\" data-example=\"keys-with-spaces\">Keys with spaces</button>",
+  "      </div>",
+  "    </div>",
   "    <button type=\"submit\">Convert</button>",
   "  </form>",
   "  <div id=\"result\"></div>",
   "  <script>",
+  "    var exampleYamls = {",
+  "      simple: \"name: jqyml\\nversion: 1\\nenabled: true\\ncount: 42\",",
+  "      anchors: \"defaults: &defaults\\n  host: localhost\\n  port: 80\\ndev:\\n  <<: *defaults\\n  port: 8080\",",
+  "      lists: \"items:\\n  - one\\n  - two\\nnested:\\n  key: value\\n  enabled: true\",",
+  "      block: \"literal_block: |\\n  Hello\\n  World\\nfolded_block: >\\n  Foo\\n  Bar\",",
+  "      \"keys-with-spaces\": \"my key: value\\nanother key: 42\"",
+  "    };",
+  "    document.querySelectorAll(\".examples-btns button\").forEach(function(btn) {",
+  "      btn.addEventListener(\"click\", function() {",
+  "        var yaml = exampleYamls[this.getAttribute(\"data-example\")];",
+  "        if (yaml) document.getElementById(\"yaml\").value = yaml;",
+  "      });",
+  "    });",
   "    document.getElementById(\"f\").onsubmit = function(e) {",
   "      e.preventDefault();",
   "      var result = document.getElementById(\"result\");",

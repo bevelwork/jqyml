@@ -1,8 +1,10 @@
-# jqx: build text from a template with {var_name} placeholders, <If name>...</If>, and <For var key>...</For>.
+# jqx: build text from a template with {var_name}, <If>, <For>, and <Name /> components.
 # Usage: echo '{"items":["a","b"]}' | jq --rawfile tmpl template.jqx -f jqx.jq
+# With components: add --rawfile header header.jqx (and/or other component files); use <Header /> in template.
 # - {identifier} is replaced by .identifier from the object.
 # - <If name>content</If> is included only when .name is truthy. Nested <If> is supported.
 # - <For iter list_key>content with {iter}</For> is repeated for each element of .list_key.
+# - <Name /> includes the component template named Name (from $header etc.); component is processed with same vars.
 
 # Return index in $s of the matching </If> for the block starting after an opening <If> at depth 1.
 # $from is the index of the first character after the opening tag (after ">").
@@ -82,8 +84,49 @@ def substitute_vars($vars):
     gsub($ph; ($vars[$ph[1:-1]] // "" | tostring))
   );
 
+# Render a component string with the same pipeline (if/for/vars)
+def render_component($comp; $vars):
+  $comp | expand_if($vars) | expand_for($vars) | substitute_vars($vars);
+
+# Escape replacement string for gsub (so & and \ are literal)
+def escape_replacement:
+  gsub("\\\\"; "\\\\\\\\") | gsub("&"; "\\\\&");
+
+# Find first <Name /> or <Name/> in $t; return {pos, len, name} or null
+def _first_component_tag($t; $components):
+  ($components | keys) as $names
+  | [ $names[] as $name
+      | ($t | index("<" + $name + " />")) as $p1
+      | ($t | index("<" + $name + "/>")) as $p2
+      | (if $p1 != null and ($p2 == null or $p1 <= $p2) then { pos: $p1, len: (("<" + $name + " />") | length), name: $name }
+        elif $p2 != null then { pos: $p2, len: (("<" + $name + "/>") | length), name: $name }
+        else null end) ]
+  | map(select(. != null))
+  | if length == 0 then null else min_by(.pos) end;
+
+# Replace the first <Name /> where Name is in $components
+def expand_one_include($vars; $components):
+  . as $t
+  | _first_component_tag($t; $components) as $m
+  | if $m == null then $t
+    else ($components[$m.name] | render_component(.; $vars) | escape_replacement) as $repl
+    | $t[0:$m.pos] + $repl + $t[$m.pos + $m.len:]
+    end;
+
+def expand_includes($vars; $components):
+  if ($components | keys | length) == 0 then .
+  else expand_one_include($vars; $components) as $next
+  | if $next == . then . else $next | expand_includes($vars; $components) end
+  end;
+
+# Build components map from rawfiles ($header -> "Header"). Pass empty.jqx when no components needed.
+def components_from_rawfiles:
+  (if ($header | length) > 0 then { "Header": $header } else {} end);
+
 . as $vars
+| components_from_rawfiles as $components
 | $tmpl
+| expand_includes($vars; $components)
 | expand_if($vars)
 | expand_for($vars)
 | substitute_vars($vars)

@@ -62,14 +62,15 @@ test: test-jqx test-state test-anchors test-speed
 	done; \
 	[ $$failed -eq 0 ] && echo "All tests passed." || { echo "$$failed test(s) failed."; exit 1; }
 
-# Run jqx tests: each tests/jqx/*.jqx has matching .json and .expected
-JQX_TESTS := $(patsubst tests/jqx/%.jqx,%,$(wildcard tests/jqx/*.jqx))
+# Run jqx tests: each tests/jqx/*.jqx (except *.header.jqx) has matching .json and .expected
+JQX_TESTS := $(filter-out %.header,$(patsubst tests/jqx/%.jqx,%,$(wildcard tests/jqx/*.jqx)))
 test-jqx:
 	@failed=0; \
 	for name in $(JQX_TESTS); do \
 	  echo "Testing jqx $$name..."; \
 	  out=$$(mktemp); \
-	  (cat "tests/jqx/$$name.json" | jq -r --rawfile tmpl "tests/jqx/$$name.jqx" -L . -f jqx.jq > "$$out" 2>&1); ret=$$?; \
+	  hdr=empty.jqx; [ -f "tests/jqx/$$name.header.jqx" ] && hdr="tests/jqx/$$name.header.jqx"; \
+	  (cat "tests/jqx/$$name.json" | jq -r --rawfile tmpl "tests/jqx/$$name.jqx" --rawfile header "$$hdr" -L . -f jqx.jq > "$$out" 2>&1); ret=$$?; \
 	  if [ $$ret -ne 0 ]; then echo "  FAILED (jq exit $$ret)"; failed=$$((failed+1)); rm -f "$$out"; continue; fi; \
 	  if ! diff -q "tests/jqx/$$name.expected" "$$out" >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; diff "tests/jqx/$$name.expected" "$$out" || true; failed=$$((failed+1)); fi; \
 	  rm -f "$$out"; \

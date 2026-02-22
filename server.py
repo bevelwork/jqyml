@@ -64,9 +64,9 @@ APP_ROOT = "/app" if os.path.exists("/app") else APP_DIR
 
 
 def _jq_cmd(base: list) -> list:
-    """Return jq command with paths under APP_ROOT."""
+    """Return jq command with paths under APP_ROOT. base is [jq, -L, /app]; we emit [jq, -L, APP_ROOT] and do not re-append the path (jq would treat it as an input file)."""
     return [base[0], "-L", APP_ROOT] + [
-        arg.replace("/app", APP_ROOT) for arg in base[2:]
+        arg.replace("/app", APP_ROOT) for arg in base[3:]
     ]
 
 
@@ -74,12 +74,17 @@ JQ_BASE = ["jq", "-L", "/app"]
 JQ = _jq_cmd(JQ_BASE)
 RUN_JQ = JQ + ["-R", "-s", "-f", os.path.join(APP_ROOT, "run.jq")]
 INDEX_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index.jq")]
-INDEX_JQX = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "index.jqx"), "-f", os.path.join(APP_ROOT, "jqx.jq")]
+INDEX_JQX = JQ + [
+    "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "index.jqx"),
+    "--rawfile", "header", os.path.join(APP_ROOT, "header.jqx"),
+    "-f", os.path.join(APP_ROOT, "jqx.jq"),
+]
 INDEX_OLD_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index_old.jq")]
 STATE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "state.jq")]
-NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "404.jqx"), "-f", os.path.join(APP_ROOT, "jqx.jq")]
-BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "400.jqx"), "-f", os.path.join(APP_ROOT, "jqx.jq")]
-UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "401.jqx"), "-f", os.path.join(APP_ROOT, "jqx.jq")]
+_EMPTY_JQX = os.path.join(APP_ROOT, "empty.jqx")
+NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "404.jqx"), "--rawfile", "header", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "400.jqx"), "--rawfile", "header", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "401.jqx"), "--rawfile", "header", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
 PARSE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "parse.jq")]
 
 
@@ -205,23 +210,16 @@ class Handler(BaseHTTPRequestHandler):
                     capture_output=True,
                     text=True,
                     timeout=5,
-                    cwd=APP_DIR,
+                    cwd=APP_ROOT,
                 )
                 _log_jq_stderr(r.stderr or "")
                 out = r.stdout if r.returncode == 0 else r.stderr or "error"
                 status = 200 if r.returncode == 0 else 500
+                if r.returncode != 0:
+                    logger.error("index.jqx jq exit %s stderr: %s", r.returncode, (r.stderr or "")[:500])
                 if r.returncode == 0 and (not out or not out.strip()):
-                    logger.warning("index.jqx produced empty output; falling back to static index.jq")
-                    r = subprocess.run(
-                        INDEX_JQ,
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                        cwd=APP_DIR,
-                    )
-                    _log_jq_stderr(r.stderr or "")
-                    out = r.stdout if r.returncode == 0 else r.stderr or "error"
-                    status = 200 if r.returncode == 0 else 500
+                    logger.error("index.jqx produced empty output; returning 500")
+                    out, status = "index.jqx produced empty output", 500
             except Exception as e:
                 logger.exception("index render failed")
                 out, status = str(e), 500

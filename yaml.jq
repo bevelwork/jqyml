@@ -191,18 +191,23 @@ def _block_append($line):
      elif ($entry.blank | not) and $line.indent < .block_scalar.content_indent then .block_scalar.content_indent = $line.indent
      else . end);
 
-# Block scalar: build string from lines (literal | or folded >)
+# Drop trailing blank entries from block scalar lines (YAML clip-chomping: one trailing \n only)
+def _trim_trailing_blanks:
+  if length > 0 and (.[-1].blank) then .[0:-1] | _trim_trailing_blanks else . end;
+
+# Block scalar: build string from lines (literal | or folded >); append exactly one \n per spec
 def _block_build_string:
   .block_scalar as $bs
+  | ($bs.lines | _trim_trailing_blanks) as $lines
   | if $bs.type == "literal" then
-      ([$bs.lines[] | if .blank then "" else .content end] | join("\n")) + "\n"
+      ([$lines[] | if .blank then "" else .content end] | join("\n")) + "\n"
     else
       ($bs.content_indent // 0) as $ci
-      | (reduce range(0; $bs.lines | length) as $i (""; . as $acc
-          | ($bs.lines[$i]) as $ln
+      | (reduce range(0; $lines | length) as $i (""; . as $acc
+          | ($lines[$i]) as $ln
           | if $ln.blank then $acc + "\n"
             elif $ln.indent > $ci then $acc + "\n" + $ln.content
-            else (if $i > 0 and ($bs.lines[$i - 1].blank | not) then $acc + " " else $acc end) + $ln.content
+            else (if $i > 0 and ($lines[$i - 1].blank | not) then $acc + " " else $acc end) + $ln.content
             end)) + "\n"
     end;
 

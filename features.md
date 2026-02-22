@@ -1,21 +1,4 @@
 # Potential features
-
-Ideas for future work on jqyml. Not a roadmap—pick what fits.
-
----
-
-## Logging (implemented)
-
-**`log.jq`** provides a log/slog-style API for the jq engine:
-
-- **`log($msg)`** – Writes a simple message to stderr (via jq’s `debug`) and passes the current value through. Use in a pipeline: `... | log("step 1") | ...`
-- **`slog($level; $msg)`** – Structured log with level (e.g. `"info"`, `"warn"`, `"error"`) and message; emits a single JSON object to stderr.
-- **`slog($level; $msg; $attrs)`** – Same, plus key-value attributes (object). Example: `slog("info"; "parsing"; {"path": $path})`
-
-**Usage:** In any jq script that runs with `-L /app` (or `-L .`), add `include "log";` then call `log(...)` or `slog(...)` in the pipeline. The input value is unchanged so logging is side-effect only.
-
-**Stderr format:** jq’s `debug` prefixes each line with `["DEBUG:", "<content>"]`. For `slog`, `<content>` is a JSON string of `{level, msg, ...attrs}`. To use from the server: capture stderr in `subprocess.run(..., capture_output=True)` and either forward it (e.g. to the app logger) or parse lines and log with a real logger.
-
 ---
 
 ## YAML parsing (yaml.jq / run.jq)
@@ -42,6 +25,7 @@ Ideas for future work on jqyml. Not a roadmap—pick what fits.
 
 ## Server & API
 
+- **GET /old** – Serves a minimal, unstyled YAML→JSON converter (no visitor counter, no CSS). Intended for low-bandwidth or legacy clients; route is kept for compatibility. Defined in `parse.jq` and served via `index_old.jq`.
 - **GET /state** – Already present; consider ETag/Last-Modified or short caching for the counter.
 - **Health/readiness** – e.g. `GET /health` or `GET /ready` for orchestration.
 - **Request size limit** – Cap POST body length to avoid abuse.

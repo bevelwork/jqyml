@@ -3,6 +3,7 @@
 **Date:** 2026-02-21
 **Reviewer:** Senior jq/jqx Engineer
 **Scope:** Full codebase review — `yaml.jq`, `jqx.jq`, `server.py`, `parse.jq`, `state.jq`, templates, Dockerfile, Makefile, test suite
+**Last updated:** 2026-02-21 (post-fix iteration)
 
 ---
 
@@ -10,241 +11,175 @@
 
 The project is a YAML-to-JSON HTTP service built on an unconventional stack: a pure-jq YAML parser (`yaml.jq`) serving as the backend logic, a minimal Python HTTP server (`server.py`), and a lightweight jq-based template engine (`jqx.jq`). All tests pass green. The architecture is coherent and the code is generally readable.
 
-Two critical correctness bugs exist — one that silently breaks YAML merge keys and one that causes incorrect jqx template rendering for nested conditionals. Additionally, there are several medium and low priority issues around robustness, security, test coverage, and developer hygiene.
+**All HIGH, MEDIUM, and LOW items from this report have been addressed.** M5 (fallback removed, 500 on empty jqx), L4 (ownership comments), L5 (GET /old documented), and L8 (trailing-blank trim, single clip-newline) are resolved.
 
 ---
 
 ## HIGH Priority
 
-### H1 — YAML merge key `<<` is silently ignored (yaml.jq)
+### ✅ H1 — YAML merge key `<<` is silently ignored *(RESOLVED)*
 
-**File:** `yaml.jq:127`
-**Impact:** Correctness — merge keys are a core YAML 1.1 feature
+**Fix:** `detect_line_type` in `yaml.jq:131` changed from `^[a-zA-Z0-9_-]+:` to `^[^:]+:` and now also explicitly handles `startswith("<<:")`. The `<<` merge key is correctly classified as `key_value` and handled by the existing merge logic in `_process_line`.
 
-`detect_line_type` classifies lines using:
-```jq
-elif ($stripped | test("^[a-zA-Z0-9_-]+:\\s*.+")) then "key_value"
-```
-
-The character class `[a-zA-Z0-9_-]` does **not** include `<`. Therefore `<<: *anchor` does not match and falls through to `"scalar"`, which `_process_line` ignores silently (the `else .` branch).
-
-**Demonstrated:**
-```yaml
-defaults: &defaults
-  host: localhost
-  port: 80
-dev:
-  <<: *defaults   # silently skipped
-  port: 8080
-```
-**Actual output:** `{"dev":{"port":8080}}`
-**Expected output:** `{"dev":{"host":"localhost","port":8080}}`
-
-The fix is to extend the detection regex to also match `<<:`:
-```jq
-elif ($stripped | startswith("<<:") or test("^[a-zA-Z0-9_-]+:\\s*.+")) then "key_value"
-```
-The downstream `key_value_line_handler` already correctly handles the `<<` key, and the alias/merge logic in `_process_line` is in place — this is purely a classification miss.
+**Verified by:** `tests/anchors/03_merge.yaml`, `07_complex_merge.yaml`, `08_merge_override_priority.yaml`, `tests/14_anchors_used.yaml` all pass with correct merged output.
 
 ---
 
-### H2 — Anchor/merge test expectations reflect the bug, not correct behavior
+### ✅ H2 — Anchor/merge test expectations reflect the bug, not correct behavior *(RESOLVED)*
 
-**File:** `tests/anchors/07_complex_merge.expected`, `tests/14_anchors_used.yaml`
-**Impact:** The test suite passes but masks the H1 bug
-
-`tests/anchors/07_complex_merge.expected` expects:
-```json
-{"common":{"env":"shared","debug":false},"service_a":{"name":"A"},"service_b":{"name":"B","debug":true}}
-```
-
-Correct YAML behavior would be:
-```json
-{"common":{"env":"shared","debug":false},"service_a":{"env":"shared","debug":false,"name":"A"},"service_b":{"env":"shared","debug":true,"name":"B"}}
-```
-
-The `.expected` file was generated from the broken implementation. Once H1 is fixed, all merge-related `.expected` files need updating. Similarly, `tests/14_anchors_used.yaml` is only smoke-tested (exit code check), with no `.expected` comparison; the merged fields would never be verified.
+**Fix:** All merge-related `.expected` files corrected:
+- `tests/anchors/03_merge.expected` updated (`extended` now includes merged field `a: 1`)
+- `tests/anchors/07_complex_merge.expected` updated (merged fields appear in `service_a` and `service_b`)
+- `tests/14_anchors_used.expected` added (was smoke-test only; now has output comparison)
+- New test `tests/anchors/08_merge_override_priority.yaml` added to guard against regression
 
 ---
 
-### H3 — Nested `<If>` blocks in jqx produce wrong output (jqx.jq)
+### ✅ H3 — Nested `<If>` blocks in jqx produce wrong output *(RESOLVED)*
 
-**File:** `jqx.jq:8–27`
-**Impact:** Correctness — content outside an inner `<If>` but inside an outer `<If>` is lost when the inner condition is false
+**Fix:** `jqx.jq` now implements `find_matching_endif($s; $from)` — a recursive, balanced-tag finder that correctly locates the `</If>` that pairs with the current opening `<If>`, skipping over any nested `<If>` blocks. `expand_one_if` now calls this instead of using a greedy `index("</If>")`.
 
-`expand_one_if` uses `index("</If>")` to find the closing tag, which always finds the **first** `</If>` in the string, not the one matching the current opening tag. With nested `<If>`:
-
-```
-<If a>outer<If b>inner</If>rest</If>
-```
-
-When `a=true, b=false`:
-- First pass expands `<If a>` with content = `outer<If b>inner` (stops at first `</If>`), after = `rest</If>`
-- Result: `outer<If b>innerrest</If>`
-- Second pass: `<If b>` false, so content `innerrest` is dropped
-- Final result: `outer`  ← **`rest` is lost**
-
-Expected result: `outerrest`
-
-This is a fundamental limitation of the greedy single-pass `index("</If>")` approach. Fixing it requires either a recursive balanced-tag finder or a convention prohibiting nested `<If>` blocks (which should be documented clearly if not fixed).
+**Verified by:** `tests/jqx/11_nested_if.jqx` (`a=true, b=false`) and `tests/jqx/12_nested_if_both_true.jqx` both pass with correct output (`outerrest` and `outerinnerrest` respectively).
 
 ---
 
 ## MEDIUM Priority
 
-### M1 — No request body size limit (server.py)
+### ✅ M1 — No request body size limit *(RESOLVED)*
 
-**File:** `server.py:193–194`
+**Fix:** `server.py:15` adds `MAX_BODY_SIZE = 1_000_000`. In `do_POST`, any request with `Content-Length > MAX_BODY_SIZE` is rejected immediately with HTTP 413 and a warning log entry — before reading the body. Logged at `logger.warning`.
 
-```python
-length = int(self.headers.get("Content-Length", 0))
-body = self.rfile.read(length).decode("utf-8", errors="replace")
-```
-
-There is no cap on `Content-Length`. A client can send a multi-gigabyte YAML payload, which will be held in memory and then passed to `jq` as a subprocess input. The `jq` process also has a 10-second timeout (`POST /`), but by then the server may already be OOM. A simple guard (e.g., reject if `length > 1_000_000`) would prevent this.
+**Verified by:** `make test-server` exercises the 413 path with a 1 MB + 1 byte payload.
 
 ---
 
-### M2 — Race condition on state read/write (server.py)
+### ✅ M2 — Race condition on state read/write *(RESOLVED)*
 
-**File:** `server.py:222–266`
-
-The `POST /state` handler reads `state.yml`, increments the counter, and writes it back — all without any file locking. Under concurrent requests (unlikely at current traffic but not impossible), two requests can both read `counter: 5` and both write `counter: 6`, losing an increment. Python's `threading.Lock` or `fcntl.flock` would resolve this.
+**Fix:** `server.py:18` introduces `_state_lock = threading.Lock()` (module-level). The state read-modify-write block in `do_POST` is now wrapped with `with _state_lock:`, preventing concurrent increments from losing updates.
 
 ---
 
-### M3 — Quoted YAML strings containing JSON are silently coerced (yaml.jq)
+### ✅ M3 — Quoted YAML strings containing JSON are silently coerced *(RESOLVED)*
 
-**File:** `yaml.jq:88–100`
-
-`coerce_value` first unquotes a YAML quoted string, then calls `try_parse_json` on the result:
+**Fix:** `yaml.jq:100` in `coerce_value` now short-circuits for `quoted_string` type:
 
 ```jq
-| if ($result | type) == "string" then $result | try_parse_json else $result end
+| if $t == "quoted_string" then $result
+  elif ($result | type) == "string" then $result | try_parse_json
+  else $result end
 ```
 
-So `key: "[1,2,3]"` (explicitly quoted string in YAML) is parsed and emitted as a JSON array `[1,2,3]` instead of the string `"[1,2,3]"`. In standard YAML, quoting a value forces it to be a string. This type mutation could cause silent data corruption for applications relying on string values that happen to contain valid JSON.
+Quoted strings are returned as-is after unquoting, without the subsequent JSON re-parse. Unquoted strings that look like JSON (e.g., bare `[1,2,3]`) are still coerced.
+
+**Verified by:** `tests/19_quoted_json_string.yaml` passes with `{"array_str":"[1,2,3]","object_str":"{\"a\":1}"}`.
 
 ---
 
-### M4 — All logging suppressed in production (server.py)
+### ✅ M4 — All logging suppressed in production *(RESOLVED)*
 
-**File:** `server.py:286–287`
-
-```python
-def log_message(self, format, *args):
-    pass
-```
-
-Every request is silently swallowed. There is no error logging, no access logging, and no way to diagnose issues in production (e.g., jq parse failures, subprocess timeouts). At minimum, errors (5xx responses, subprocess failures) should be logged to stderr.
+**Fix:** `server.py` now uses Python's `logging` module fully:
+- `logging.basicConfig(level=logging.INFO)` configured at startup
+- `logger = logging.getLogger("jqyml")` used throughout
+- `log_message` now calls `logger.info(format % args)` instead of `pass`
+- All subprocess failures, 413s, timeouts, and exceptions logged at appropriate levels (`logger.error`, `logger.exception`, `logger.warning`)
+- jq stderr forwarded to Python logging via a `_forward_jq_stderr` helper
 
 ---
 
-### M5 — Silent fallback from `index.jqx` to `index.jq` (server.py)
+### ✅ M5 — Silent fallback from `index.jqx` to `index.jq` *(RESOLVED)*
 
-**File:** `server.py:148–157`
-
-```python
-if r.returncode == 0 and (not out or not out.strip()):
-    r = subprocess.run(INDEX_JQ, ...)
-```
-
-If the jqx template engine produces empty output (but exits 0), the server silently renders the static `index.jq` instead. The static version does not include the visitor counter or the conditional rendering. This fallback is invisible to the operator and the user, and would make template regressions very hard to notice. The fallback should either be removed (fail loudly) or logged.
+**Fix:** The fallback to `index.jq` was removed. When `index.jqx` produces empty output (exit 0), the server now logs `logger.error("index.jqx produced empty output; returning 500")` and returns HTTP 500 with body `"index.jqx produced empty output"`. Regressions in the jqx template are now visible immediately.
 
 ---
 
-### M6 — Error page variable naming inconsistent across templates
+### ✅ M6 — Error page variable naming inconsistent across templates *(RESOLVED)*
 
-**Files:** `404.jqx`, `400.jqx`, `401.jqx`
+**Fix:** `404.jqx` changed from `{error_code}` to `{status}` throughout. `NOT_FOUND_VARS` in `server.py:50` updated to use `"status"` as the key. All three error page templates (`400.jqx`, `401.jqx`, `404.jqx`) now uniformly use `{status}` as the HTTP status code placeholder.
 
-`404.jqx` uses `{error_code}` as the HTTP status placeholder; `400.jqx` and `401.jqx` use `{status}`. These are the same semantic concept with different names. If a new error template is added, the correct variable name is ambiguous. Standardize on one name (e.g., `{status}`) across all error templates.
+**Note:** `tests/jqx/06_404.jqx` was updated to use `{status}` so it mirrors production `404.jqx`. Tests `13_400_error_page` and `14_401_error_page` exercise the 400/401 templates with `{status}`.
 
 ---
 
-### M7 — No `.gitignore` — `__pycache__` is untracked noise
+### ✅ M7 — No `.gitignore` *(RESOLVED)*
 
-**Files:** project root (missing `.gitignore`)
-
-`__pycache__/` appears as untracked in `git status`. There is no `.gitignore` in the repo. This should be added to prevent build artifacts, editor files, and Python bytecode from cluttering `git status` and accidentally being staged.
+**Fix:** `.gitignore` added at project root covering:
+- `__pycache__/`, `*.py[cod]`, `*.so` — Python build artifacts
+- `*.swp`, `*.swo`, `.DS_Store` — editor and OS noise
+- `*.log` — log files
+- `state/state.yml` — runtime state (correctly excluded; the image seeds an initial `counter: 0`)
 
 ---
 
 ## LOW Priority
 
-### L1 — YAML keys with spaces are silently dropped (yaml.jq)
+### ✅ L1 — YAML keys with spaces are silently dropped *(RESOLVED)*
 
-**File:** `yaml.jq:127`
+**Fix:** Same regex change as H1 — `detect_line_type` now uses `^[^:]+:` which matches any key not containing a literal colon, including keys with spaces, hyphens beyond `[a-z0-9]`, and other previously-excluded characters.
 
-`detect_line_type` matches keys with `^[a-zA-Z0-9_-]+:`. A key like `my key: value` (space in key) does not match any pattern and is classified as "scalar", then silently ignored. The output is `{}`. Standard YAML allows unquoted keys with spaces. This is a known parser limitation but is not documented anywhere, and silent data loss is worse than a clear error.
-
----
-
-### L2 — `parse_route` is a subprocess call on every request (server.py)
-
-**File:** `server.py:35–46`
-
-```python
-r = subprocess.run(PARSE_JQ, input=json.dumps(request), ...)
-```
-
-`parse.jq` contains simple if/elif routing logic. Spawning a `jq` subprocess for every single request (including every YAML conversion) adds ~10–30ms of process-spawn overhead per request plus the cost of jq startup. Since routing logic is static and simple, it could be inlined into Python with zero overhead. This is the single easiest performance win available.
+**Verified by:** `tests/20_keys_with_spaces.yaml` passes with `{"my key":"value","another key":42}`.
 
 ---
 
-### L3 — `GET /state` is untested (Makefile / tests)
+### ✅ L2 — `parse_route` spawns a `jq` subprocess on every request *(RESOLVED)*
 
-**File:** `Makefile`, `tests/state/`
-
-The `state.jq` tests cover `POST /state` scenarios. The `GET /state` route (which returns the current state JSON) has no dedicated test. It delegates to `_get_current_state()` which reads `state.yml` via `run.jq`. If `state.yml` is missing or malformed, the fallback `{"counter": 0}` is returned silently. A test covering this path (including the missing-file case) would improve confidence.
+**Fix:** `parse_route` is now a pure Python function in `server.py:86–101`. It replicates the `parse.jq` if/elif routing logic in native Python with no subprocess. The `PARSE_JQ` constant is retained for reference but is no longer called. Every request saves a full `jq` process-spawn round-trip.
 
 ---
 
-### L4 — `index.jq` and `index.jqx` have diverged without a clear ownership model
+### ✅ L3 — `GET /state` route has no test coverage *(RESOLVED)*
 
-**Files:** `index.jq`, `index.jqx`
-
-`index.jqx` is the active template (served via jqx engine with conditional visitor count logic). `index.jq` is the static fallback and is also referenced in the Makefile `run` target. The two files have diverged: `index.jqx` has the correct `showCount` JS logic with `n === 0 ? "No visitors" : n`, while `index.jq` does not. If someone edits `index.jq` thinking it's the primary file, changes won't appear in production. Consider removing `index.jq` as a served route and keeping it only as a documented fallback, or delete it entirely.
+**Fix:** `make test-server` (added to `Makefile:88–109`) starts the server on `TEST_PORT`, issues a live `GET /state`, and asserts HTTP 200 with a body containing `"counter"`. Also covers the 413 body-size limit and 404 for unknown routes.
 
 ---
 
-### L5 — `/old` route serves a permanently maintained dead-end page
+### ✅ L4 — `index.jq` and `index.jqx` have diverged without a clear ownership model *(RESOLVED)*
 
-**File:** `index_old.jq`, `parse.jq:8`, `server.py:164`
-
-`GET /old` serves a styled-free version of the converter with no visitor counter. There's no indication in the UI or docs what "old" means or why it exists. If this is a migration artifact, it should be removed. If it's intentional (e.g., for low-bandwidth clients), it should be documented.
+**Fix:** Comment blocks were added at the top of both files. `index.jq` states it is static, used only for local `make run`; production serves `index.jqx`; there is no fallback (empty jqx → 500). `index.jqx` states it is the production front page (jqx + counter + conditionals) and that empty output results in HTTP 500. The fallback was removed (M5), so `index.jq` is no longer served on empty jqx.
 
 ---
 
-### L6 — No Docker health check; Caddy may route before jqyml is ready
+### ✅ L5 — `/old` route serves an undocumented dead-end *(RESOLVED)*
 
-**File:** `docker-compose.yml`
+**Fix:** Documented in `features.md` under Server & API: `GET /old` serves a minimal, unstyled YAML→JSON converter (no counter, no CSS) for low-bandwidth or legacy clients; route kept for compatibility. `parse.jq` already had an inline comment describing the route.
+
+---
+
+### ✅ L6 — No Docker health check *(RESOLVED)*
+
+**Fix:** `docker-compose.yml` now defines a `healthcheck` on the `jqyml` service:
 
 ```yaml
-depends_on:
-  - jqyml
+healthcheck:
+  test: ["CMD", "wget", "-q", "--spider", "http://localhost:8888/"]
+  interval: 5s
+  timeout: 3s
+  retries: 3
+  start_period: 5s
 ```
 
-`depends_on` only waits for the container to start, not for the HTTP server inside it to be listening. Under load or slow machines, Caddy may start routing to `jqyml:8888` before Python's `HTTPServer.serve_forever()` is ready. A `healthcheck` on the jqyml service would eliminate this race.
+Caddy's `depends_on` now uses `condition: service_healthy`, ensuring Caddy does not begin proxying until jqyml is confirmed ready.
 
 ---
 
-### L7 — `state.yml` is COPY'd into the Docker image
+### ✅ L7 — `state.yml` resets on container restart *(RESOLVED)*
 
-**File:** `Dockerfile:5`
+**Fix:** `docker-compose.yml` mounts a named volume:
 
+```yaml
+jqyml:
+  volumes:
+    - jqyml_state:/app/state
+volumes:
+  jqyml_state:
 ```
-COPY state/ /app/state/
-```
 
-The initial `state/state.yml` (`counter: 0`) is baked into the image. On container restart, the counter resets to whatever was in the image layer (0), not what was written at runtime. For the counter to survive restarts, `state/` needs to be a Docker volume mount. This is likely intentional for now but is a latent confusion for operators.
+The `state/` directory is now backed by a persistent Docker volume. Counter state survives container restarts and image rebuilds. The `COPY state/ /app/state/` in the Dockerfile still provides the initial seed (`counter: 0`) on first volume creation.
 
 ---
 
-### L8 — `block_scalar` folded mode trailing newline handling may surprise
+### ✅ L8 — Block scalar trailing newline overcorrection *(RESOLVED)*
 
-**File:** `yaml.jq:196–204`
-
-The `_block_build_string` implementation for folded scalars (`>`) joins non-blank lines with a space and blank lines with `\n`. Standard YAML folded scalars append a trailing newline. The current implementation does not explicitly add one. In practice the trailing newline comes from the blank line separator, but edge cases (folded block as the last key with no trailing blank line) may not produce the expected trailing newline. This was not caught by the existing `18_block_scalars.yaml` tests.
+**Fix:** Added `_trim_trailing_blanks` in `yaml.jq`: it recursively drops trailing entries in the block scalar `lines` array where `.blank` is true, so the separator blank line before the next key is not included in the scalar content. `_block_build_string` now builds from the trimmed lines and appends exactly one `"\n"` (YAML clip-chomping). Literal and folded block scalars now produce a single trailing newline. `tests/18_block_scalars.expected` and `tests/21_block_scalar_last_key.expected` were updated to the spec-correct output.
 
 ---
 
@@ -252,34 +187,34 @@ The `_block_build_string` implementation for folded scalars (`>`) joins non-blan
 
 | Area | Tests | Coverage |
 |---|---|---|
-| YAML parser (smoke) | 18 YAML files, exit-code only | No output comparison |
-| Anchor/alias/merge | 7 `.expected` comparisons | H2: merge expectations are wrong |
-| jqx template engine | 10 `.expected` comparisons | Nested `<If>` not covered |
+| YAML parser (smoke + output) | 21 YAML files; 7 with `.expected` output comparison | Good; edge cases for spaces, quoted JSON, block scalars covered |
+| Anchor/alias/merge | 8 `.expected` comparisons | Solid; scalar, block, merge, multi-anchor, nested, override all covered |
+| jqx template engine | 14 `.expected` comparisons | Good; `<If>`, nested `<If>`, `<For>`, missing vars, all 3 error pages covered |
 | state.jq logic | 6 `.expected` + 1 parse test | Solid |
-| `GET /state` route | None | Gap |
-| YAML edge cases (keys w/ spaces, tabs, multiline) | None | Gap |
+| Server integration | `make test-server` (live HTTP) | 413 body limit, 404, GET /state verified |
+| Speed regression | `make test-speed` (50 iterations) | ~36ms/run baseline established |
 
 ---
 
 ## Summary Table
 
-| ID | Severity | File(s) | Description |
+| ID | Severity | Status | Description |
 |---|---|---|---|
-| H1 | HIGH | `yaml.jq:127` | `<<` merge key silently ignored — not matched by line-type regex |
-| H2 | HIGH | `tests/anchors/*.expected` | Test expectations reflect broken behavior, not correct YAML |
-| H3 | HIGH | `jqx.jq:8–27` | Nested `<If>` blocks drop outer content when inner condition is false |
-| M1 | MED | `server.py:193` | No POST body size limit — unbounded memory use |
-| M2 | MED | `server.py:222–266` | State read/write has no file lock — race condition under concurrency |
-| M3 | MED | `yaml.jq:88–100` | Quoted YAML strings containing JSON are coerced to JSON types |
-| M4 | MED | `server.py:286` | All logging suppressed — no observability in production |
-| M5 | MED | `server.py:148–157` | Silent fallback from jqx to static index.jq on empty template output |
-| M6 | MED | `400.jqx`, `404.jqx`, `401.jqx` | Error page status variable named inconsistently (`{status}` vs `{error_code}`) |
-| M7 | MED | project root | No `.gitignore` — `__pycache__` and build artifacts accumulate |
-| L1 | LOW | `yaml.jq:127` | Keys with spaces silently dropped instead of erroring |
-| L2 | LOW | `server.py:35` | Route parsing spawns a `jq` subprocess per request — trivially avoidable overhead |
-| L3 | LOW | `tests/` | `GET /state` route has no test coverage |
-| L4 | LOW | `index.jq`, `index.jqx` | Two diverged index templates — unclear ownership, confusing fallback |
-| L5 | LOW | `index_old.jq`, `parse.jq` | `/old` route is an undocumented dead-end |
-| L6 | LOW | `docker-compose.yml` | No health check — Caddy may proxy before jqyml is listening |
-| L7 | LOW | `Dockerfile`, `docker-compose.yml` | `state/` not volume-mounted — counter resets on container restart |
-| L8 | LOW | `yaml.jq:196–204` | Folded block scalar trailing newline edge case not verified |
+| H1 | HIGH | ✅ Resolved | `<<` merge key — regex widened to `^[^:]+:` + explicit `startswith("<<:")` |
+| H2 | HIGH | ✅ Resolved | Merge `.expected` files corrected; `14_anchors_used.expected` added |
+| H3 | HIGH | ✅ Resolved | Nested `<If>` — `find_matching_endif` recursive balanced-tag finder added |
+| M1 | MED | ✅ Resolved | `MAX_BODY_SIZE = 1_000_000`; 413 returned and logged; `test-server` covers it |
+| M2 | MED | ✅ Resolved | `threading.Lock()` wraps state read-modify-write |
+| M3 | MED | ✅ Resolved | `coerce_value` skips `try_parse_json` for `quoted_string` type |
+| M4 | MED | ✅ Resolved | Full `logging` module; `log_message` forwards; jq stderr bridged |
+| M5 | MED | ✅ Resolved | Fallback removed; empty jqx → HTTP 500 and error log |
+| M6 | MED | ✅ Resolved | All error templates standardised on `{status}`; `NOT_FOUND_VARS` updated |
+| M7 | MED | ✅ Resolved | `.gitignore` added covering pycache, editors, logs, runtime state |
+| L1 | LOW | ✅ Resolved | Keys with spaces — same regex fix as H1 |
+| L2 | LOW | ✅ Resolved | `parse_route` inlined as pure Python; no subprocess per request |
+| L3 | LOW | ✅ Resolved | `make test-server` exercises `GET /state` live |
+| L4 | LOW | ✅ Resolved | Comment blocks in both index files; fallback removed (M5) |
+| L5 | LOW | ✅ Resolved | GET /old documented in features.md; parse.jq comment |
+| L6 | LOW | ✅ Resolved | Docker healthcheck added; Caddy uses `condition: service_healthy` |
+| L7 | LOW | ✅ Resolved | Named volume `jqyml_state` persists counter across restarts |
+| L8 | LOW | ✅ Resolved | `_trim_trailing_blanks` + single `\n`; expected files updated |
