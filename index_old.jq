@@ -7,6 +7,7 @@
   "  <meta charset=\"utf-8\">",
   "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
   "  <title>jqyml – YAML to JSON</title>",
+  "  <link rel=\"icon\" href=\"/favicon.ico\" type=\"image/x-icon\">",
   "</head>",
   "<body>",
   "  <h1>jqyml</h1>",

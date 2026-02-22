@@ -11,6 +11,7 @@
   "  <meta charset=\"utf-8\">",
   "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
   "  <title>jqyml – YAML to JSON</title>",
+  "  <link rel=\"icon\" href=\"/favicon.ico\" type=\"image/x-icon\">",
   "  <style>",
   "    * { box-sizing: border-box; }",
   "    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #f8f8f8; }",

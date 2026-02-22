@@ -92,15 +92,25 @@ def render_component($comp; $vars):
 def escape_replacement:
   gsub("\\\\"; "\\\\\\\\") | gsub("&"; "\\\\&");
 
-# Find first <Name /> or <Name/> in $t; return {pos, len, name} or null
+# Find first <Name /> or <Name/> in $t; return {pos, len, name} or null.
+# Only match when the tag is at a word boundary (start, newline, or space before "<") so we never match
+# a substring (e.g. "der />" inside "<Header />"). Require / before >. Compute len from the template.
 def _first_component_tag($t; $components):
   ($components | keys) as $names
   | [ $names[] as $name
+      | ($t | index("  <" + $name + " />")) as $p0
+      | ($t | index("\n  <" + $name + " />")) as $pn
       | ($t | index("<" + $name + " />")) as $p1
       | ($t | index("<" + $name + "/>")) as $p2
-      | (if $p1 != null and ($p2 == null or $p1 <= $p2) then { pos: $p1, len: (("<" + $name + " />") | length), name: $name }
-        elif $p2 != null then { pos: $p2, len: (("<" + $name + "/>") | length), name: $name }
-        else null end) ]
+      | (if $p0 != null then $p0 + 2
+        elif $pn != null then $pn + 3
+        elif $p1 != null and ($p2 == null or $p1 <= $p2) then $p1
+        elif $p2 != null then $p2
+        else null end) as $pos
+      | if $pos != null then
+          (($t[$pos:] | index(">")) + 1) as $len
+        | { pos: $pos, len: $len, name: $name }
+        else null end ]
   | map(select(. != null))
   | if length == 0 then null else min_by(.pos) end;
 
@@ -125,7 +135,7 @@ def components_from_rawfiles:
 
 . as $vars
 | components_from_rawfiles as $components
-| $tmpl
+| ($tmpl | gsub("\r\n"; "\n"))
 | expand_includes($vars; $components)
 | expand_if($vars)
 | expand_for($vars)

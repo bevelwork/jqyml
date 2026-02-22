@@ -59,6 +59,7 @@ UNAUTHORIZED_VARS = {
 }
 STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state", "state.yml")
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+FAVICON_PATH = os.path.join(APP_DIR, "favicon.ico")
 # Use /app in Docker, else APP_DIR for local runs (e.g. make test-server)
 APP_ROOT = "/app" if os.path.exists("/app") else APP_DIR
 
@@ -77,14 +78,15 @@ INDEX_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index.jq")]
 INDEX_JQX = JQ + [
     "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "index.jqx"),
     "--rawfile", "header", os.path.join(APP_ROOT, "header.jqx"),
+    "--rawfile", "head", os.path.join(APP_ROOT, "head.jqx"),
     "-f", os.path.join(APP_ROOT, "jqx.jq"),
 ]
 INDEX_OLD_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index_old.jq")]
 STATE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "state.jq")]
 _EMPTY_JQX = os.path.join(APP_ROOT, "empty.jqx")
-NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "404.jqx"), "--rawfile", "header", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
-BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "400.jqx"), "--rawfile", "header", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
-UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "401.jqx"), "--rawfile", "header", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "404.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "400.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "401.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
 PARSE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "parse.jq")]
 
 
@@ -99,6 +101,8 @@ def parse_route(method: str, path: str, body: str) -> dict:
         return {"action": "unauthorized"}
     if method == "GET" and p == "/state":
         return {"action": "state_read"}
+    if method == "GET" and p == "/favicon.ico":
+        return {"action": "favicon"}
     if method == "POST" and p == "/":
         return {"action": "convert", "body": body or ""}
     if method == "POST" and p == "/state":
@@ -255,6 +259,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"message": str(e)}).encode())
+        elif route["action"] == "favicon":
+            favicon = os.path.join(APP_ROOT, "favicon.ico")
+            if os.path.isfile(favicon):
+                with open(favicon, "rb") as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/x-icon")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_404()
         else:
             self.send_404()
 

@@ -70,7 +70,8 @@ test-jqx:
 	  echo "Testing jqx $$name..."; \
 	  out=$$(mktemp); \
 	  hdr=empty.jqx; [ -f "tests/jqx/$$name.header.jqx" ] && hdr="tests/jqx/$$name.header.jqx"; \
-	  (cat "tests/jqx/$$name.json" | jq -r --rawfile tmpl "tests/jqx/$$name.jqx" --rawfile header "$$hdr" -L . -f jqx.jq > "$$out" 2>&1); ret=$$?; \
+	  headf=empty.jqx; [ -f "tests/jqx/$$name.head.jqx" ] && headf="tests/jqx/$$name.head.jqx"; \
+	  (cat "tests/jqx/$$name.json" | jq -r --rawfile tmpl "tests/jqx/$$name.jqx" --rawfile header "$$hdr" --rawfile head "$$headf" -L . -f jqx.jq > "$$out" 2>&1); ret=$$?; \
 	  if [ $$ret -ne 0 ]; then echo "  FAILED (jq exit $$ret)"; failed=$$((failed+1)); rm -f "$$out"; continue; fi; \
 	  if ! diff -q "tests/jqx/$$name.expected" "$$out" >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; diff "tests/jqx/$$name.expected" "$$out" || true; failed=$$((failed+1)); fi; \
 	  rm -f "$$out"; \
