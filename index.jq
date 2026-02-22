@@ -34,7 +34,7 @@
   "    <div class=\"counter-box\">Visitor count: <span id=\"count\" class=\"count\">—</span></div>",
   "  </header>",
   "  <h1>YAML to JSON</h1>",
-  "  <p>Paste YAML below and click Convert to get JSON. Anchors and aliases are not supported.</p>",
+  "  <p>Paste YAML below and click Convert to get JSON. Supports anchors (&amp;name) and aliases (*name).</p>",
   "  <form id=\"f\">",
   "    <label for=\"yaml\">YAML</label>",
   "    <textarea id=\"yaml\" name=\"yaml\" placeholder=\"e.g.&#10;foo: 1&#10;bar: hello\"></textarea>",

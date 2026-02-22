@@ -1,4 +1,4 @@
-# Test that anchor usage is rejected
+# Test anchors (&name), aliases (*name), and merge (<<: *name)
 defaults: &defaults
   host: localhost
   port: 80

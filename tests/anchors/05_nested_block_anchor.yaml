@@ -1,0 +1,7 @@
+# Anchor defined in nested block, alias at same level
+outer:
+  inner: &ref
+    p: 1
+    q: 2
+  alias_here: *ref
+top_alias: *ref

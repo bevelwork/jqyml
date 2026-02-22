@@ -1,0 +1,8 @@
+# Multiple anchors and aliases
+first: &x 10
+second: &y 20
+sum_ref: *x
+also_first: *x
+nested:
+  one: *x
+  two: *y

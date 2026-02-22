@@ -1,4 +1,4 @@
-.PHONY: run test test-jqx test-state up send docker-up docker-down docker-send
+.PHONY: run test test-jqx test-state test-anchors up send docker-up docker-down docker-send
 
 JQYML_DIR := $(CURDIR)
 PORT := 8888
@@ -13,31 +13,41 @@ test-state:
 	for name in $(STATE_JQ_TESTS); do \
 	  echo "Testing state $$name..."; \
 	  out=$$(mktemp); \
-	  (cat "tests/state/$$name.json" | jq -c -f state.jq > "$$out" 2>&1); ret=$$?; \
+	  (cat "tests/state/$$name.json" | jq -c -L . -f state.jq > "$$out" 2>/dev/null); ret=$$?; \
 	  if [ $$ret -ne 0 ]; then echo "  FAILED (jq exit $$ret)"; failed=$$((failed+1)); rm -f "$$out"; continue; fi; \
 	  if ! diff -q "tests/state/$$name.expected" "$$out" >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; diff "tests/state/$$name.expected" "$$out" || true; failed=$$((failed+1)); fi; \
 	  rm -f "$$out"; \
 	done; \
 	echo "Testing state parse_state (YAML -> run.jq)..."; \
 	out=$$(mktemp); \
-	(jq -R -s -rf run.jq < tests/state/parse_state.yaml | jq -c . > "$$out" 2>&1); ret=$$?; \
+	(jq -R -s -L . -rf run.jq < tests/state/parse_state.yaml 2>/dev/null | jq -c . > "$$out"); ret=$$?; \
 	if [ $$ret -ne 0 ]; then echo "  FAILED (parse exit $$ret)"; failed=$$((failed+1)); rm -f "$$out"; else \
 	  if ! diff -q tests/state/parse_state.expected "$$out" >/dev/null 2>&1; then echo "  FAILED (parse output mismatch)"; diff tests/state/parse_state.expected "$$out" || true; failed=$$((failed+1)); fi; \
 	fi; rm -f "$$out"; \
 	[ $$failed -eq 0 ] && echo "All state tests passed." || { echo "$$failed state test(s) failed."; exit 1; }
 
+# Run anchor/alias unit tests: each tests/anchors/*.yaml has matching .expected (compact JSON)
+ANCHOR_TESTS := $(patsubst tests/anchors/%.yaml,%,$(wildcard tests/anchors/*.yaml))
+test-anchors:
+	@failed=0; \
+	for name in $(ANCHOR_TESTS); do \
+	  echo "Testing anchors $$name..."; \
+	  out=$$(mktemp); \
+	  (jq -R -s -L . -rf run.jq < "tests/anchors/$$name.yaml" 2>/dev/null | jq -c . > "$$out"); ret=$$?; \
+	  if [ $$ret -ne 0 ]; then echo "  FAILED (parse exit $$ret)"; failed=$$((failed+1)); rm -f "$$out"; continue; fi; \
+	  if ! diff -q "tests/anchors/$$name.expected" "$$out" >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; diff "tests/anchors/$$name.expected" "$$out" || true; failed=$$((failed+1)); fi; \
+	  rm -f "$$out"; \
+	done; \
+	[ $$failed -eq 0 ] && echo "All anchor tests passed." || { echo "$$failed anchor test(s) failed."; exit 1; }
+
 # Run YAML parser and jqx tests.
 TEST_YAMLS := $(wildcard tests/*.yaml)
-test: test-jqx test-state
+test: test-jqx test-state test-anchors
 	@failed=0; \
 	for f in $(TEST_YAMLS); do \
 	  echo "Testing $$f..."; \
 	  jq -R -s -rf run.jq < "$$f" >/dev/null 2>&1; ret=$$?; \
-	  if basename "$$f" | grep -q '14_anchors'; then \
-	    if [ $$ret -eq 0 ]; then echo "  FAILED (expected anchor rejection)"; failed=$$((failed+1)); fi; \
-	  else \
-	    if [ $$ret -ne 0 ]; then echo "  FAILED"; failed=$$((failed+1)); fi; \
-	  fi; \
+	  if [ $$ret -ne 0 ]; then echo "  FAILED"; failed=$$((failed+1)); fi; \
 	done; \
 	[ $$failed -eq 0 ] && echo "All tests passed." || { echo "$$failed test(s) failed."; exit 1; }
 

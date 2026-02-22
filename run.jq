@@ -1,9 +1,7 @@
+include "log";
 include "yaml";
 
-# Reject YAML anchors: &name and *alias (error goes to stderr, exit non-zero)
-. as $input
-| if ($input | test("&[a-zA-Z0-9_-]+|\\*[a-zA-Z0-9_-]+")) then
-    error("you're an idiot... don't use anchors")
-  else
-    $input | parse_yaml
-  end
+# Parse YAML (supports anchors &name and aliases *name, merge <<: *name)
+. | slog("info"; "convert_start"; {"input_bytes": (length)})
+| parse_yaml
+| slog("info"; "convert_ok"; {"top_level_keys": (keys | length)})

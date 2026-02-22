@@ -1,11 +1,44 @@
 #!/usr/bin/env python3
 """Minimal HTTP server: routes from parse.jq; GET / -> index.jq, POST / -> run.jq (YAML->JSON), POST /state -> state.jq."""
 import json
+import logging
 import os
 import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import yaml
+
+logger = logging.getLogger("jqyml")
+
+
+def _log_jq_stderr(stderr: str) -> None:
+    """Forward jq stderr (DEBUG|... or slog JSON) to Python logging."""
+    if not (stderr and stderr.strip()):
+        return
+    for line in stderr.strip().splitlines():
+        s = line.strip()
+        if s.startswith("DEBUG|"):
+            s = s[6:].strip()
+        elif s.startswith("DEBUG:"):
+            s = s[6:].strip()
+        else:
+            logger.debug("jq: %s", line)
+            continue
+        try:
+            obj = json.loads(s)
+            if isinstance(obj, dict) and "msg" in obj:
+                level = (obj.get("level") or "info").lower()
+                msg = obj.get("msg", "")
+                attrs = {k: v for k, v in obj.items() if k not in ("level", "msg")}
+                log_fn = getattr(logger, level, logger.info)
+                if attrs:
+                    log_fn("%s %s", msg, attrs)
+                else:
+                    log_fn("%s", msg)
+            else:
+                logger.debug("%s", s)
+        except json.JSONDecodeError:
+            logger.debug("jq: %s", s)
 
 JQ = ["jq", "-L", "/app"]
 RUN_JQ = JQ + ["-R", "-s", "-f", "/app/run.jq"]
@@ -41,6 +74,7 @@ class Handler(BaseHTTPRequestHandler):
             text=True,
             timeout=2,
         )
+        _log_jq_stderr(r.stderr or "")
         if r.returncode != 0:
             return {"action": "not_found"}
         return json.loads(r.stdout)
@@ -55,6 +89,7 @@ class Handler(BaseHTTPRequestHandler):
                 timeout=2,
                 cwd="/app",
             )
+            _log_jq_stderr(r.stderr or "")
             body = r.stdout if r.returncode == 0 else "404 Not Found"
         except Exception:
             body = "404 Not Found"
@@ -74,6 +109,7 @@ class Handler(BaseHTTPRequestHandler):
                 timeout=2,
                 cwd="/app",
             )
+            _log_jq_stderr(r.stderr or "")
             body = r.stdout if r.returncode == 0 else f"400 Bad Request: {message}"
         except Exception:
             body = f"400 Bad Request: {message}"
@@ -92,6 +128,7 @@ class Handler(BaseHTTPRequestHandler):
                 timeout=2,
                 cwd="/app",
             )
+            _log_jq_stderr(r.stderr or "")
             body = r.stdout if r.returncode == 0 else "401 Unauthorized"
         except Exception:
             body = "401 Unauthorized"
@@ -115,6 +152,7 @@ class Handler(BaseHTTPRequestHandler):
                 timeout=5,
                 cwd="/app",
             )
+            _log_jq_stderr(r.stderr or "")
             if r.returncode != 0:
                 return {"counter": 0}
             state = json.loads(r.stdout)
@@ -143,6 +181,7 @@ class Handler(BaseHTTPRequestHandler):
                     timeout=5,
                     cwd=APP_DIR,
                 )
+                _log_jq_stderr(r.stderr or "")
                 out = r.stdout if r.returncode == 0 else r.stderr or "error"
                 status = 200 if r.returncode == 0 else 500
                 if r.returncode == 0 and (not out or not out.strip()):
@@ -153,6 +192,7 @@ class Handler(BaseHTTPRequestHandler):
                         timeout=5,
                         cwd=APP_DIR,
                     )
+                    _log_jq_stderr(r.stderr or "")
                     out = r.stdout if r.returncode == 0 else r.stderr or "error"
                     status = 200 if r.returncode == 0 else 500
             except Exception as e:
@@ -164,6 +204,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route["action"] == "index_old":
             try:
                 r = subprocess.run(INDEX_OLD_JQ, capture_output=True, text=True, timeout=5, cwd="/app")
+                _log_jq_stderr(r.stderr or "")
                 out = r.stdout if r.returncode == 0 else r.stderr or "error"
                 status = 200 if r.returncode == 0 else 500
             except Exception as e:
@@ -202,6 +243,7 @@ class Handler(BaseHTTPRequestHandler):
                     text=True,
                     timeout=10,
                 )
+                _log_jq_stderr(r.stderr or "")
                 out = r.stdout if r.returncode == 0 else r.stderr or r.stdout
                 status = 200 if r.returncode == 0 else 400
             except subprocess.TimeoutExpired:
@@ -231,6 +273,7 @@ class Handler(BaseHTTPRequestHandler):
                         timeout=5,
                         cwd="/app",
                     )
+                    _log_jq_stderr(r.stderr or "")
                     current_state = json.loads(r.stdout) if r.returncode == 0 else {}
                 else:
                     current_state = {"counter": 0}
@@ -253,6 +296,7 @@ class Handler(BaseHTTPRequestHandler):
                     timeout=2,
                     cwd="/app",
                 )
+                _log_jq_stderr(r.stderr or "")
                 if r.returncode != 0:
                     self.send_response(500)
                     self.send_header("Content-Type", "application/json")
@@ -288,4 +332,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
     HTTPServer(("", 8888), Handler).serve_forever()

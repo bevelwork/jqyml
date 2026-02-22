@@ -1,0 +1,11 @@
+# Multiple merges and overrides
+common: &common
+  env: shared
+  debug: false
+service_a:
+  <<: *common
+  name: A
+service_b:
+  <<: *common
+  name: B
+  debug: true

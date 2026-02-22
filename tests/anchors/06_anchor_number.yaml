@@ -1,0 +1,4 @@
+# Scalar anchor with number
+count: &n 42
+same: *n
+double: 84

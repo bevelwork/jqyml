@@ -2,6 +2,7 @@
 # Input: { request: { method, path, headers: {}, body: {} }, current_state: {} }
 # Output: { valid: true, new_state: {...} } or { valid: false, status: 400, message: "..." }
 # Validation: Content-Type header present and application/json; body.counter == 1.
+include "log";
 
 .request as $req
 | ($req.headers["Content-Type"] // $req.headers["content-type"] // "") as $ct
@@ -14,3 +15,4 @@
   else
     { valid: true, new_state: (.current_state | .counter += 1) }
   end
+  | . as $res | slog("info"; "state_validate"; {"valid": $res.valid}) | $res

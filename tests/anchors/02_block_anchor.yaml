@@ -1,0 +1,5 @@
+# Block anchor: whole object is anchored
+defaults: &cfg
+  host: localhost
+  port: 80
+production: *cfg

@@ -1,5 +1,6 @@
 # YAML parsing shim for jq (indentation-based, no external deps).
 # Usage: parse_yaml($raw_string) or parse_yaml($input)
+include "log";
 
 #c Safe split: input must be a string (avoids "split must be strings" error)
 def safe_split_newlines:
@@ -210,12 +211,27 @@ def _finalize_block:
   | .block_scalar = null;
 
 # Reduce parsed lines into a single JSON value (object or array).
-# Stack entries: {obj: object, indent: number, key: string}. stack[0] is current (deepest).
-# Pop stack until top.indent < line.indent so indented lines nest under the right parent.
+# Stack entries: {obj: object, indent: number, key: string, anchor?: string}. stack[0] is current (deepest).
+# Pop stack until top.indent < line.indent; save any popped frame's .anchor into state.anchors.
 def _pop_until_indent($line_indent):
   if length <= 1 then .
   elif .[0].indent >= $line_indent then .[1:] | _pop_until_indent($line_indent)
   else . end;
+
+# Pop stack and save anchors from popped frames into state.anchors
+def _save_anchors_and_pop($line_indent):
+  . as $state
+  | $state.stack as $stack
+  | ($stack | _pop_until_indent($line_indent)) as $new_stack
+  | (($stack | length) - ($new_stack | length)) as $num_popped
+  | $state
+  | .anchors = ($state.anchors // {}) + (
+      reduce range(0; $num_popped) as $i (
+        {};
+        . + (if $stack[$i].anchor != null then {($stack[$i].anchor): $stack[$i].obj} else {} end)
+      )
+    )
+  | .stack = $new_stack;
 
 # One reduce iteration: state and line -> new state
 def _process_line($line):
@@ -235,7 +251,7 @@ def _process_line($line):
           .stack[1].obj = .stack[1].obj + [.stack[0].obj]
           | .stack[0].obj = {}
         else
-          .stack = (.stack | _pop_until_indent($line.indent))
+          _save_anchors_and_pop($line.indent)
           | . as $state2
           | if ($line.type == "list_item" and $line.indent == 0 and (($line.value | strip) == "") and ($state2.stack | length) == 1) then
               .root_is_list = true
@@ -250,9 +266,33 @@ def _process_line($line):
               | if $is_block_scalar then
                    .block_scalar = {key: $line.key, type: $block_type, key_indent: $line.indent, content_indent: null, lines: []}
                  else
-                   .stack[0].obj[$line.key] = ($line.value | coerce_value)
-                   | .last_key = $line.key
-                   | (if (.stack | length) > 1 and .stack[0].key != null then reduce range(0; .stack | length - 1) as $i (.; .stack[$i + 1].obj[.stack[$i].key] = .stack[$i].obj) else . end)
+                   ($line.value | strip) as $val
+                   | (if ($val | test("^&[a-zA-Z0-9_-]+$")) then ($val | capture("^&(?<name>[a-zA-Z0-9_-]+)$") | .name) else null end) as $block_anchor
+                   | (if ($val | test("^&[a-zA-Z0-9_-]+\\s")) then ($val | capture("^&(?<name>[a-zA-Z0-9_-]+)\\s+(?<rest>.+)$")) else null end) as $scalar_anchor
+                   | (if ($val | test("^\\*[a-zA-Z0-9_-]+$")) then ($val | capture("^\\*(?<name>[a-zA-Z0-9_-]+)$") | .name) else null end) as $alias_name
+                   | if $block_anchor != null then
+                       (.stack[0].obj[$line.key] = {}
+                        | .stack = ([{obj: .stack[0].obj[$line.key], indent: $line.indent, key: $line.key, anchor: $block_anchor}] + .stack)
+                        | .last_key = $line.key)
+                     elif $scalar_anchor != null then
+                       (($scalar_anchor.rest | coerce_value) as $scalar_val
+                        | .anchors[$scalar_anchor.name] = $scalar_val
+                        | .stack[0].obj[$line.key] = $scalar_val
+                        | .last_key = $line.key
+                        | (if (.stack | length) > 1 and .stack[0].key != null then reduce range(0; .stack | length - 1) as $i (.; .stack[$i + 1].obj[.stack[$i].key] = .stack[$i].obj) else . end))
+                     elif $alias_name != null then
+                       (if $line.key == "<<" then
+                          .stack[0].obj = (.stack[0].obj + (.anchors[$alias_name] // {}))
+                        else
+                          .stack[0].obj[$line.key] = (.anchors[$alias_name] // null)
+                          | .last_key = $line.key
+                        end
+                        | (if (.stack | length) > 1 and .stack[0].key != null then reduce range(0; .stack | length - 1) as $i (.; .stack[$i + 1].obj[.stack[$i].key] = .stack[$i].obj) else . end))
+                     else
+                       .stack[0].obj[$line.key] = ($line.value | coerce_value)
+                       | .last_key = $line.key
+                       | (if (.stack | length) > 1 and .stack[0].key != null then reduce range(0; .stack | length - 1) as $i (.; .stack[$i + 1].obj[.stack[$i].key] = .stack[$i].obj) else . end)
+                     end
                  end
             elif $line.type == "list_item" then
               ($line.value | coerce_list_item_value) as $item_val
@@ -272,9 +312,10 @@ def _process_line($line):
 
 def parse_yaml:
   (if type == "string" then . else "" end) as $raw
-  | $raw | parsed_lines as $lines
+  | $raw | slog("debug"; "parse_yaml_start"; {"lines": ($raw | split("\n") | length)})
+  | parsed_lines as $lines
   | reduce $lines[] as $line (
-      { stack: [{obj: {}, indent: -1, key: null}], last_key: null, root_is_list: false, block_scalar: null };
+      { stack: [{obj: {}, indent: -1, key: null}], last_key: null, root_is_list: false, block_scalar: null, anchors: {} };
       _process_line($line)
     )
   | (if .block_scalar != null then _finalize_block else . end)

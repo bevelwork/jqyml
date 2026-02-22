@@ -1,0 +1,8 @@
+# Merge key <<: *anchor
+base: &base
+  a: 1
+  b: 2
+extended:
+  <<: *base
+  b: 99
+  c: 3
