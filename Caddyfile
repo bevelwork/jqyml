@@ -1,3 +1,9 @@
+# HTTPS for jq.bevel.work — Caddy obtains and renews a TLS certificate automatically (Let's Encrypt).
+jq.bevel.work {
+	reverse_proxy jqyml:8888
+}
+
+# HTTP fallback (e.g. direct IP, local dev, or when using host port 8080)
 :80 {
 	reverse_proxy jqyml:8888
 }
