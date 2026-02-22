@@ -1,7 +1,11 @@
-.PHONY: run test test-jqx test-state test-anchors up send docker-up docker-down docker-send
+.PHONY: run test test-jqx test-state test-anchors test-server test-speed speed up send docker-up docker-down docker-send
 
 JQYML_DIR := $(CURDIR)
 PORT := 8888
+
+# Speed test: run a single test N times and report duration (e.g. make speed ITERATIONS=100)
+ITERATIONS ?= 50
+SPEED_YAML ?= tests/03_simple_key_value.yaml
 
 run:
 	jq -R -s -rf run.jq < test.yml
@@ -41,13 +45,20 @@ test-anchors:
 	[ $$failed -eq 0 ] && echo "All anchor tests passed." || { echo "$$failed anchor test(s) failed."; exit 1; }
 
 # Run YAML parser and jqx tests.
+# If tests/<name>.expected exists, compare run.jq output to it; else only check exit code.
 TEST_YAMLS := $(wildcard tests/*.yaml)
-test: test-jqx test-state test-anchors
+test: test-jqx test-state test-anchors test-speed
 	@failed=0; \
 	for f in $(TEST_YAMLS); do \
 	  echo "Testing $$f..."; \
-	  jq -R -s -rf run.jq < "$$f" >/dev/null 2>&1; ret=$$?; \
-	  if [ $$ret -ne 0 ]; then echo "  FAILED"; failed=$$((failed+1)); fi; \
+	  base="$${f%.yaml}"; \
+	  out=$$(mktemp); \
+	  (jq -R -s -L . -rf run.jq < "$$f" 2>/dev/null | jq -c . > "$$out"); ret=$$?; \
+	  if [ $$ret -ne 0 ]; then echo "  FAILED (parse exit $$ret)"; failed=$$((failed+1)); rm -f "$$out"; continue; fi; \
+	  if [ -f "$$base.expected" ]; then \
+	    if ! diff -q "$$base.expected" "$$out" >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; diff "$$base.expected" "$$out" || true; failed=$$((failed+1)); fi; \
+	  fi; \
+	  rm -f "$$out"; \
 	done; \
 	[ $$failed -eq 0 ] && echo "All tests passed." || { echo "$$failed test(s) failed."; exit 1; }
 
@@ -70,6 +81,40 @@ up:
 
 down:
 	docker compose down
+
+# Sanity-check 413, 404, and GET /state. Starts server on TEST_PORT, then kills it.
+# Requires: PyYAML (pip install pyyaml), jq in PATH.
+TEST_PORT ?= 18888
+test-server:
+	@dd if=/dev/zero of=/tmp/jqyml_big bs=1000001 count=1 2>/dev/null; \
+	cd $(JQYML_DIR) && PORT=$(TEST_PORT) python3 server.py >/tmp/jqyml_server.log 2>&1 & pid=$$!; \
+	sleep 1; \
+	up=$$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 http://127.0.0.1:$(TEST_PORT)/ 2>/dev/null); \
+	if [ "$$up" = "000" ] || [ -z "$$up" ]; then \
+	  kill $$pid 2>/dev/null || true; \
+	  echo "Server did not start (code=$$up). Run: pip install pyyaml"; exit 1; \
+	fi; \
+	failed=0; \
+	code=$$(curl -s -o /tmp/jqyml_413 -w "%{http_code}" -X POST -H "Content-Length: 1000001" --data-binary @/tmp/jqyml_big http://127.0.0.1:$(TEST_PORT)/ 2>/dev/null); \
+	if [ "$$code" != "413" ]; then echo "  FAILED: POST with oversized body returned $$code (expected 413)"; failed=$$((failed+1)); fi; \
+	grep -q "Request entity too large" /tmp/jqyml_413 2>/dev/null || { echo "  FAILED: 413 body should contain 'Request entity too large'"; failed=$$((failed+1)); }; \
+	code=$$(curl -s -o /tmp/jqyml_404 -w "%{http_code}" http://127.0.0.1:$(TEST_PORT)/nonexistent 2>/dev/null); \
+	if [ "$$code" != "404" ]; then echo "  FAILED: GET /nonexistent returned $$code (expected 404)"; failed=$$((failed+1)); fi; \
+	grep -q "404" /tmp/jqyml_404 2>/dev/null || { echo "  FAILED: 404 page should contain '404'"; failed=$$((failed+1)); }; \
+	code=$$(curl -s -o /tmp/jqyml_state -w "%{http_code}" http://127.0.0.1:$(TEST_PORT)/state 2>/dev/null); \
+	if [ "$$code" != "200" ]; then echo "  FAILED: GET /state returned $$code (expected 200)"; failed=$$((failed+1)); fi; \
+	grep -q '"counter"' /tmp/jqyml_state 2>/dev/null || { echo "  FAILED: GET /state body should contain \"counter\""; failed=$$((failed+1)); }; \
+	kill $$pid 2>/dev/null || true; \
+	rm -f /tmp/jqyml_big /tmp/jqyml_413 /tmp/jqyml_404 /tmp/jqyml_state /tmp/jqyml_server.log; \
+	if [ $$failed -eq 0 ]; then echo "test-server: 413, 404, GET /state OK"; else echo "$$failed check(s) failed"; exit 1; fi
+
+# Speed test: run run.jq on SPEED_YAML ITERATIONS times; report total and per-iteration time.
+# Override: make speed ITERATIONS=1000 SPEED_YAML=tests/14_anchors_used.yaml
+test-speed:
+	@echo "Running speed test ($(ITERATIONS) iterations)..."; \
+	cd $(JQYML_DIR) && ITERATIONS="$(ITERATIONS)" SPEED_YAML="$(SPEED_YAML)" python3 scripts/speed.py
+
+speed: test-speed
 
 # POST test.yml to containerized service (run "make up" first).
 send:

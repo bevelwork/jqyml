@@ -4,11 +4,18 @@ import json
 import logging
 import os
 import subprocess
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import yaml
 
 logger = logging.getLogger("jqyml")
+
+# Max request body size (1MB) to avoid OOM on large payloads
+MAX_BODY_SIZE = 1_000_000
+
+# Lock for state read-modify-write to avoid lost increments under concurrency
+_state_lock = threading.Lock()
 
 
 def _log_jq_stderr(stderr: str) -> None:
@@ -40,44 +47,63 @@ def _log_jq_stderr(stderr: str) -> None:
         except json.JSONDecodeError:
             logger.debug("jq: %s", s)
 
-JQ = ["jq", "-L", "/app"]
-RUN_JQ = JQ + ["-R", "-s", "-f", "/app/run.jq"]
-INDEX_JQ = JQ + ["-n", "-r", "-f", "/app/index.jq"]
-INDEX_JQX = JQ + ["-r", "--rawfile", "tmpl", "/app/index.jqx", "-f", "/app/jqx.jq"]
-INDEX_OLD_JQ = JQ + ["-n", "-r", "-f", "/app/index_old.jq"]
-STATE_JQ = JQ + ["-f", "/app/state.jq"]
-NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", "/app/404.jqx", "-f", "/app/jqx.jq"]
 NOT_FOUND_VARS = {
-    "error_code": "404",
+    "status": "404",
     "message": "Not Found.",
     "explanation": "404 - Nothing matches the given URI.",
 }
-BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", "/app/400.jqx", "-f", "/app/jqx.jq"]
-UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", "/app/401.jqx", "-f", "/app/jqx.jq"]
 UNAUTHORIZED_VARS = {
     "status": "401",
     "message": "Unauthorized.",
     "explanation": "401 - Unauthorized route or invalid credentials.",
 }
-PARSE_JQ = JQ + ["-f", "/app/parse.jq"]
 STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state", "state.yml")
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# Use /app in Docker, else APP_DIR for local runs (e.g. make test-server)
+APP_ROOT = "/app" if os.path.exists("/app") else APP_DIR
+
+
+def _jq_cmd(base: list) -> list:
+    """Return jq command with paths under APP_ROOT."""
+    return [base[0], "-L", APP_ROOT] + [
+        arg.replace("/app", APP_ROOT) for arg in base[2:]
+    ]
+
+
+JQ_BASE = ["jq", "-L", "/app"]
+JQ = _jq_cmd(JQ_BASE)
+RUN_JQ = JQ + ["-R", "-s", "-f", os.path.join(APP_ROOT, "run.jq")]
+INDEX_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index.jq")]
+INDEX_JQX = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "index.jqx"), "-f", os.path.join(APP_ROOT, "jqx.jq")]
+INDEX_OLD_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index_old.jq")]
+STATE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "state.jq")]
+NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "404.jqx"), "-f", os.path.join(APP_ROOT, "jqx.jq")]
+BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "400.jqx"), "-f", os.path.join(APP_ROOT, "jqx.jq")]
+UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "401.jqx"), "-f", os.path.join(APP_ROOT, "jqx.jq")]
+PARSE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "parse.jq")]
+
+
+def parse_route(method: str, path: str, body: str) -> dict:
+    """Route request to action; matches parse.jq logic without subprocess."""
+    p = path.split("?")[0]
+    if method == "GET" and p in ("/", "/index.html"):
+        return {"action": "index"}
+    if method == "GET" and p == "/old":
+        return {"action": "index_old"}
+    if method == "GET" and p == "/admin":
+        return {"action": "unauthorized"}
+    if method == "GET" and p == "/state":
+        return {"action": "state_read"}
+    if method == "POST" and p == "/":
+        return {"action": "convert", "body": body or ""}
+    if method == "POST" and p == "/state":
+        return {"action": "state", "body": body or ""}
+    return {"action": "not_found"}
 
 
 class Handler(BaseHTTPRequestHandler):
     def parse_route(self, method: str, path: str, body: str) -> dict:
-        request = {"method": method, "path": path, "body": body}
-        r = subprocess.run(
-            PARSE_JQ,
-            input=json.dumps(request),
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        _log_jq_stderr(r.stderr or "")
-        if r.returncode != 0:
-            return {"action": "not_found"}
-        return json.loads(r.stdout)
+        return parse_route(method, path, body)
 
     def send_404(self):
         try:
@@ -87,7 +113,7 @@ class Handler(BaseHTTPRequestHandler):
                 capture_output=True,
                 text=True,
                 timeout=2,
-                cwd="/app",
+                cwd=APP_ROOT,
             )
             _log_jq_stderr(r.stderr or "")
             body = r.stdout if r.returncode == 0 else "404 Not Found"
@@ -107,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
                 capture_output=True,
                 text=True,
                 timeout=2,
-                cwd="/app",
+                cwd=APP_ROOT,
             )
             _log_jq_stderr(r.stderr or "")
             body = r.stdout if r.returncode == 0 else f"400 Bad Request: {message}"
@@ -126,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
                 capture_output=True,
                 text=True,
                 timeout=2,
-                cwd="/app",
+                cwd=APP_ROOT,
             )
             _log_jq_stderr(r.stderr or "")
             body = r.stdout if r.returncode == 0 else "401 Unauthorized"
@@ -150,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
                 capture_output=True,
                 text=True,
                 timeout=5,
-                cwd="/app",
+                cwd=APP_ROOT,
             )
             _log_jq_stderr(r.stderr or "")
             if r.returncode != 0:
@@ -185,6 +211,7 @@ class Handler(BaseHTTPRequestHandler):
                 out = r.stdout if r.returncode == 0 else r.stderr or "error"
                 status = 200 if r.returncode == 0 else 500
                 if r.returncode == 0 and (not out or not out.strip()):
+                    logger.warning("index.jqx produced empty output; falling back to static index.jq")
                     r = subprocess.run(
                         INDEX_JQ,
                         capture_output=True,
@@ -196,6 +223,7 @@ class Handler(BaseHTTPRequestHandler):
                     out = r.stdout if r.returncode == 0 else r.stderr or "error"
                     status = 200 if r.returncode == 0 else 500
             except Exception as e:
+                logger.exception("index render failed")
                 out, status = str(e), 500
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -203,11 +231,12 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(out.encode("utf-8"))
         elif route["action"] == "index_old":
             try:
-                r = subprocess.run(INDEX_OLD_JQ, capture_output=True, text=True, timeout=5, cwd="/app")
+                r = subprocess.run(INDEX_OLD_JQ, capture_output=True, text=True, timeout=5, cwd=APP_ROOT)
                 _log_jq_stderr(r.stderr or "")
                 out = r.stdout if r.returncode == 0 else r.stderr or "error"
                 status = 200 if r.returncode == 0 else 500
             except Exception as e:
+                logger.exception("index_old failed")
                 out, status = str(e), 500
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -223,6 +252,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(state).encode())
             except Exception as e:
+                logger.exception("GET /state failed")
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -232,6 +262,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
+        if length > MAX_BODY_SIZE:
+            logger.warning("body size %s exceeds limit %s", length, MAX_BODY_SIZE)
+            self.send_response(413)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"message": "Request entity too large"}).encode())
+            return
         body = self.rfile.read(length).decode("utf-8", errors="replace")
         route = self.parse_route("POST", self.path, body)
         if route["action"] == "convert":
@@ -247,8 +284,10 @@ class Handler(BaseHTTPRequestHandler):
                 out = r.stdout if r.returncode == 0 else r.stderr or r.stdout
                 status = 200 if r.returncode == 0 else 400
             except subprocess.TimeoutExpired:
+                logger.error("POST / convert timeout")
                 out, status = "timeout", 408
             except Exception as e:
+                logger.exception("POST / convert failed")
                 out, status = str(e), 500
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -262,64 +301,67 @@ class Handler(BaseHTTPRequestHandler):
                 return
             headers_lower = {k.lower(): v for k, v in self.headers.items()}
             try:
-                if os.path.isfile(STATE_PATH):
-                    with open(STATE_PATH) as f:
-                        yaml_raw = f.read()
+                with _state_lock:
+                    if os.path.isfile(STATE_PATH):
+                        with open(STATE_PATH) as f:
+                            yaml_raw = f.read()
+                        r = subprocess.run(
+                            RUN_JQ,
+                            input=yaml_raw,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            cwd=APP_ROOT,
+                        )
+                        _log_jq_stderr(r.stderr or "")
+                        current_state = json.loads(r.stdout) if r.returncode == 0 else {}
+                    else:
+                        current_state = {"counter": 0}
+                    if "counter" not in current_state:
+                        current_state["counter"] = 0
+                    state_input = {
+                        "request": {
+                            "method": "POST",
+                            "path": "/state",
+                            "headers": headers_lower,
+                            "body": body_obj,
+                        },
+                        "current_state": current_state,
+                    }
                     r = subprocess.run(
-                        RUN_JQ,
-                        input=yaml_raw,
+                        STATE_JQ,
+                        input=json.dumps(state_input),
                         capture_output=True,
                         text=True,
-                        timeout=5,
-                        cwd="/app",
+                        timeout=2,
+                        cwd=APP_ROOT,
                     )
                     _log_jq_stderr(r.stderr or "")
-                    current_state = json.loads(r.stdout) if r.returncode == 0 else {}
-                else:
-                    current_state = {"counter": 0}
-                if "counter" not in current_state:
-                    current_state["counter"] = 0
-                state_input = {
-                    "request": {
-                        "method": "POST",
-                        "path": "/state",
-                        "headers": headers_lower,
-                        "body": body_obj,
-                    },
-                    "current_state": current_state,
-                }
-                r = subprocess.run(
-                    STATE_JQ,
-                    input=json.dumps(state_input),
-                    capture_output=True,
-                    text=True,
-                    timeout=2,
-                    cwd="/app",
-                )
-                _log_jq_stderr(r.stderr or "")
-                if r.returncode != 0:
-                    self.send_response(500)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"message": r.stderr or "state.jq failed"}).encode())
-                    return
-                result = json.loads(r.stdout)
-                if result.get("valid"):
-                    os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-                    with open(STATE_PATH, "w") as f:
-                        yaml.dump(result["new_state"], f, default_flow_style=False, sort_keys=False)
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(json.dumps(result["new_state"]).encode())
-                else:
-                    status = result.get("status", 400)
-                    msg = result.get("message", "validation failed")
-                    if status == 401:
-                        self.send_401()
+                    if r.returncode != 0:
+                        logger.error("state.jq failed: %s", r.stderr or "unknown")
+                        self.send_response(500)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"message": r.stderr or "state.jq failed"}).encode())
+                        return
+                    result = json.loads(r.stdout)
+                    if result.get("valid"):
+                        os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+                        with open(STATE_PATH, "w") as f:
+                            yaml.dump(result["new_state"], f, default_flow_style=False, sort_keys=False)
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps(result["new_state"]).encode())
                     else:
-                        self.send_400(msg)
+                        status = result.get("status", 400)
+                        msg = result.get("message", "validation failed")
+                        if status == 401:
+                            self.send_401()
+                        else:
+                            self.send_400(msg)
             except Exception as e:
+                logger.exception("POST /state failed")
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -328,7 +370,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_404()
 
     def log_message(self, format, *args):
-        pass
+        logger.info(format % args)
 
 
 if __name__ == "__main__":
@@ -336,4 +378,5 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    HTTPServer(("", 8888), Handler).serve_forever()
+    port = int(os.environ.get("PORT", "8888"))
+    HTTPServer(("", port), Handler).serve_forever()

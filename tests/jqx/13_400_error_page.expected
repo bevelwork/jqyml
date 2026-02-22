@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>400 Bad Request</title>
+</head>
+<body>
+  <h1>Error response</h1>
+  <p><strong>Error code:</strong> 400</p>
+  <p><strong>Message:</strong> Body must be JSON.</p>
+  <p><strong>Error code explanation:</strong> 400 - Bad Request / invalid user input.</p>
+</body>
+</html>
+

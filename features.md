@@ -55,6 +55,7 @@ Ideas for future work on jqyml. Not a roadmap—pick what fits.
 ## State engine
 
 - **Richer state** – More than `counter` (e.g. last_visit, user_prefs) with validation in state.jq.
+- **Persistence:** In Docker Compose, `state/` is volume-mounted (`jqyml_state`) so the visitor counter (and any future state) survives container restarts. Without the volume, the counter resets on restart.
 - **Persistence options** – Besides a single YAML file, optional SQLite or external store.
 - **Reset / admin** – Authenticated or token-protected endpoint to reset or inspect state.
 - **Audit** – Append-only log of state changes (who/what/when) for debugging or compliance.

@@ -96,8 +96,10 @@ def coerce_value:
        elif $t == "embedded_json" then (try ($raw | fromjson) catch null) as $parsed | if $parsed != null then $parsed else $raw end
        else                       $raw | default_string_handler
        end) as $result
-    # After quoted string unquote, value may be a string that looks like JSON; try parsing once
-    | if ($result | type) == "string" then $result | try_parse_json else $result end
+    # Quoted strings stay string; only try JSON parse for unquoted string values
+    | if $t == "quoted_string" then $result
+      elif ($result | type) == "string" then $result | try_parse_json
+      else $result end
   end;
 
 def coerce_list_item_value:
@@ -125,8 +127,8 @@ def detect_line_type:
   if type != "string" then "scalar" else
     . as $stripped
     | if ($stripped | startswith("- ")) or ($stripped | test("^-\\s*$")) then "list_item"
-      elif ($stripped | test("^[a-zA-Z0-9_-]+:\\s*$")) then "key"
-      elif ($stripped | test("^[a-zA-Z0-9_-]+:\\s*.+")) then "key_value"
+      elif ($stripped | test("^[^:]+:\\s*$")) then "key"
+      elif ($stripped | startswith("<<:") or ($stripped | test("^[^:]+:\\s*.+"))) then "key_value"
       else "scalar"
       end
   end;
@@ -193,15 +195,15 @@ def _block_append($line):
 def _block_build_string:
   .block_scalar as $bs
   | if $bs.type == "literal" then
-      [$bs.lines[] | if .blank then "" else .content end] | join("\n")
+      ([$bs.lines[] | if .blank then "" else .content end] | join("\n")) + "\n"
     else
       ($bs.content_indent // 0) as $ci
-      | reduce range(0; $bs.lines | length) as $i (""; . as $acc
+      | (reduce range(0; $bs.lines | length) as $i (""; . as $acc
           | ($bs.lines[$i]) as $ln
           | if $ln.blank then $acc + "\n"
             elif $ln.indent > $ci then $acc + "\n" + $ln.content
             else (if $i > 0 and ($bs.lines[$i - 1].blank | not) then $acc + " " else $acc end) + $ln.content
-            end)
+            end)) + "\n"
     end;
 
 # Block scalar: write key and clear state

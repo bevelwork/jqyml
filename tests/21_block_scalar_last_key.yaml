@@ -1,0 +1,8 @@
+# (L8) Block scalars as the last key in a document must retain a trailing newline.
+# YAML clip-chomping (default) always appends one trailing newline to block scalars.
+literal_block: |
+  Hello
+  World
+folded_block: >
+  Foo
+  Bar

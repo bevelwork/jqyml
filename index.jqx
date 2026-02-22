@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Primary index template: served via jqx with visitor count and conditionals. Fallback: index.jq -->
 <html lang="en">
 <head>
   <meta charset="utf-8">

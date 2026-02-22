@@ -1,1 +1,1 @@
-{"common":{"env":"shared","debug":false},"service_a":{"name":"A"},"service_b":{"name":"B","debug":true}}
+{"common":{"env":"shared","debug":false},"service_a":{"env":"shared","debug":false,"name":"A"},"service_b":{"env":"shared","debug":true,"name":"B"}}

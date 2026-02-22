@@ -1,6 +1,14 @@
 services:
   jqyml:
     build: .
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - jqyml_state:/app/state
   caddy:
     image: caddy:alpine
     ports:
@@ -8,4 +16,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
-      - jqyml
+      jqyml:
+        condition: service_healthy
+volumes:
+  jqyml_state:

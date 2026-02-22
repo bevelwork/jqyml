@@ -1,0 +1,3 @@
+# (M3) YAML-quoted strings that look like JSON must remain strings, not be type-coerced
+array_str: "[1,2,3]"
+object_str: '{"a":1}'

@@ -1,6 +1,7 @@
-# Route parsing: request -> { action, body? }
+# Route parsing: request -> { action, body? } (mirrored in server.py parse_route())
 # Input: { method, path, body? }  (path may include query string)
 # Output: { action: "index" | "index_old" | "convert" | "state" | "unauthorized" | "not_found", body?: string }
+# GET /old = minimal converter page (no styles/counter) for low-bandwidth or legacy clients.
 include "log";
 
 .method as $method

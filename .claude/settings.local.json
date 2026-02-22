@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make test:*)",
+      "Bash(printf common: &common\\\\n  env: shared\\\\n  debug: false\\\\nservice_a:\\\\n  <<: *common\\\\n  name: A\\\\n:*)",
+      "Bash(printf timestamp: 2024-01-01T12:00:00Z\\\\n:*)",
+      "Bash(echo:*)",
+      "Bash(# Check what happens with YAML keys containing special chars like dots or spaces \\(not supported\\)\nprintf '\"quoted key\": value\\\\n' | jq -R -s -rf run.jq 2>&1\nprintf 'key with spaces: value\\\\n' | jq -R -s -rf run.jq 2>&1)",
+      "Bash(printf 'key with spaces: value\\\\n' | jq -R -s -rf run.jq 2>&1)",
+      "Bash(ls:*)",
+      "Bash(jq:*)",
+      "Bash(printf {\"literal_block\":\"Hello\\\\\\\\nWorld\\\\\\\\n\",\"folded_block\":\"Foo Bar\\\\\\\\n\"}\\\\n:*)",
+      "Bash(echo === expected file \\(hex\\) ===:*)"
+    ]
+  }
+}

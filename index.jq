@@ -1,5 +1,5 @@
-# Front page: ignore input, output HTML form for YAML -> JSON conversion.
-# Run with: jq -n -r -f index.jq
+# Static fallback front page (no visitor counter). Used when index.jqx returns empty.
+# Primary template is index.jqx (jqx engine with conditional counter). Run with: jq -n -r -f index.jq
 [
   "<!DOCTYPE html>",
   "<html lang=\"en\">",

@@ -1,8 +1,26 @@
 # jqx: build text from a template with {var_name} placeholders, <If name>...</If>, and <For var key>...</For>.
 # Usage: echo '{"items":["a","b"]}' | jq --rawfile tmpl template.jqx -f jqx.jq
 # - {identifier} is replaced by .identifier from the object.
-# - <If name>content</If> is included only when .name is truthy.
+# - <If name>content</If> is included only when .name is truthy. Nested <If> is supported.
 # - <For iter list_key>content with {iter}</For> is repeated for each element of .list_key.
+
+# Return index in $s of the matching </If> for the block starting after an opening <If> at depth 1.
+# $from is the index of the first character after the opening tag (after ">").
+def find_matching_endif($s; $from):
+  ($s[$from:] | index("</If>")) as $b
+  | if $b == null then null
+    else ($s[$from:] | index("<If ")) as $a
+    | if $a == null or $b < $a then $from + $b
+      else ($s[$from + $a + 4:] | index(">")) as $g
+      | if $g == null then null
+        else ($from + $a + 4 + $g + 1) as $inner_start
+        | find_matching_endif($s; $inner_start) as $inner_end
+        | if $inner_end == null then null
+          else find_matching_endif($s; $inner_end + 5)
+          end
+        end
+      end
+    end;
 
 # Expand the first <If name>content</If> block; include content only if $vars[name] is truthy.
 def expand_one_if($vars):
@@ -14,10 +32,10 @@ def expand_one_if($vars):
       else ($t[$start:($start + $tag_len + 1)] | capture("<If (?<name>[a-zA-Z0-9_]+)>")) as $m
       | if $m == null then $t
         else ($start + $tag_len + 1) as $content_start
-        | ($t[$content_start:] | index("</If>")) as $content_len
-        | if $content_len == null then $t
-          else $t[$content_start:($content_start + $content_len)] as $content
-          | ($content_start + $content_len + 5) as $after_start
+        | find_matching_endif($t; $content_start) as $match_end
+        | if $match_end == null then $t
+          else $t[$content_start:$match_end] as $content
+          | ($match_end + 5) as $after_start
           | $t[$after_start:] as $after
           | (if $vars[$m.name] then $content else "" end) as $replacement
           | $t[:$start] + $replacement + $after

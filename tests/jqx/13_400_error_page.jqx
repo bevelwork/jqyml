@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{status} Not Found</title>
+  <title>{status} Bad Request</title>
 </head>
 <body>
   <h1>Error response</h1>

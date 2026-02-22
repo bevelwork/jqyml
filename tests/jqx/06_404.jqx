@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{error_code} Not Found</title>
+  <title>{status} Not Found</title>
 </head>
 <body>
   <h1>Error response</h1>
-  <p><strong>Error code:</strong> {error_code}</p>
+  <p><strong>Error code:</strong> {status}</p>
   <p><strong>Message:</strong> {message}</p>
   <p><strong>Error code explanation:</strong> {explanation}</p>
 </body>

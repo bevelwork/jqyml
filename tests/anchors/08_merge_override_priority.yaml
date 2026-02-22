@@ -1,0 +1,7 @@
+# H1 regression: merged fields from anchor appear in child; explicit key overrides merged value
+base: &base
+  color: red
+  size: large
+item:
+  <<: *base
+  color: blue

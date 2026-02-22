@@ -1,0 +1,3 @@
+# (L1) YAML keys containing spaces should be parsed, not silently dropped
+my key: value
+another key: 42
