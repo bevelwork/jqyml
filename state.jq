@@ -1,4 +1,5 @@
 # state.jq: validate POST /state request; if valid, output new_state with .counter incremented.
+# Preserves .transforms (and other keys) from current_state.
 # Input: { request: { method, path, headers: {}, body: {} }, current_state: {} }
 # Output: { valid: true, new_state: {...} } or { valid: false, status: 400, message: "..." }
 # Validation: Content-Type header present and application/json; body.counter == 1.
@@ -13,6 +14,6 @@ include "log";
   elif ($ct_ok | not) then
     { valid: false, status: 400, message: "Content-Type must be application/json" }
   else
-    { valid: true, new_state: (.current_state | .counter += 1) }
+    { valid: true, new_state: (.current_state | .counter += 1 | .transforms = (.transforms // 0)) }
   end
   | . as $res | slog("info"; "state_validate"; {"valid": $res.valid}) | $res

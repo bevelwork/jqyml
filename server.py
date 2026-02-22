@@ -62,6 +62,28 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 FAVICON_PATH = os.path.join(APP_DIR, "favicon.ico")
 # Use /app in Docker, else APP_DIR for local runs (e.g. make test-server)
 APP_ROOT = "/app" if os.path.exists("/app") else APP_DIR
+SITE_URL = os.environ.get("SITE_URL", "http://localhost:8888").rstrip("/")
+
+
+def _robots_txt() -> str:
+    return (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /admin\n"
+        "Disallow: /state\n"
+        "\n"
+        f"Sitemap: {SITE_URL}/sitemap.xml\n"
+    )
+
+
+def _sitemap_xml() -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f'  <url><loc>{SITE_URL}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n'
+        f'  <url><loc>{SITE_URL}/old</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>\n'
+        '</urlset>\n'
+    )
 
 
 def _jq_cmd(base: list) -> list:
@@ -103,6 +125,10 @@ def parse_route(method: str, path: str, body: str) -> dict:
         return {"action": "state_read"}
     if method == "GET" and p == "/favicon.ico":
         return {"action": "favicon"}
+    if method == "GET" and p == "/robots.txt":
+        return {"action": "robots"}
+    if method == "GET" and p == "/sitemap.xml":
+        return {"action": "sitemap"}
     if method == "POST" and p == "/":
         return {"action": "convert", "body": body or ""}
     if method == "POST" and p == "/state":
@@ -175,7 +201,7 @@ class Handler(BaseHTTPRequestHandler):
     def _get_current_state(self) -> dict:
         """Return current state (e.g. from state.yml); default counter 0."""
         if not os.path.isfile(STATE_PATH):
-            return {"counter": 0}
+            return {"counter": 0, "transforms": 0}
         try:
             with open(STATE_PATH) as f:
                 yaml_raw = f.read()
@@ -189,13 +215,15 @@ class Handler(BaseHTTPRequestHandler):
             )
             _log_jq_stderr(r.stderr or "")
             if r.returncode != 0:
-                return {"counter": 0}
+                return {"counter": 0, "transforms": 0}
             state = json.loads(r.stdout)
             if "counter" not in state:
                 state["counter"] = 0
+            if "transforms" not in state:
+                state["transforms"] = 0
             return state
         except Exception:
-            return {"counter": 0}
+            return {"counter": 0, "transforms": 0}
 
     def do_GET(self):
         route = self.parse_route("GET", self.path, "")
@@ -203,10 +231,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 state = self._get_current_state()
                 count = state.get("counter", 0)
+                transforms = state.get("transforms", 0)
                 index_vars = {
                     "count": count,
                     "count_is_zero": count == 0,
                     "count_gt_0": count > 0,
+                    "transforms": transforms,
+                    "transforms_one": transforms == 1,
+                    "transforms_plural": transforms != 1,
                 }
                 r = subprocess.run(
                     INDEX_JQX,
@@ -222,8 +254,22 @@ class Handler(BaseHTTPRequestHandler):
                 if r.returncode != 0:
                     logger.error("index.jqx jq exit %s stderr: %s", r.returncode, (r.stderr or "")[:500])
                 if r.returncode == 0 and (not out or not out.strip()):
-                    logger.error("index.jqx produced empty output; returning 500")
-                    out, status = "index.jqx produced empty output", 500
+                    logger.warning("index.jqx produced empty output; falling back to index.jq")
+                    try:
+                        r2 = subprocess.run(
+                            INDEX_JQ,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            cwd=APP_ROOT,
+                        )
+                        _log_jq_stderr(r2.stderr or "")
+                        if r2.returncode == 0 and (r2.stdout or "").strip():
+                            out, status = r2.stdout, 200
+                        else:
+                            out, status = "index.jqx produced empty output", 500
+                    except Exception:
+                        out, status = "index.jqx produced empty output", 500
             except Exception as e:
                 logger.exception("index render failed")
                 out, status = str(e), 500
@@ -272,6 +318,20 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(data)
             else:
                 self.send_404()
+        elif route["action"] == "robots":
+            data = _robots_txt().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif route["action"] == "sitemap":
+            data = _sitemap_xml().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/xml; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         else:
             self.send_404()
 
@@ -308,6 +368,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(out.encode("utf-8"))
+            if status == 200:
+                try:
+                    with _state_lock:
+                        state = self._get_current_state()
+                        state["transforms"] = state.get("transforms", 0) + 1
+                        os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+                        with open(STATE_PATH, "w") as f:
+                            yaml.dump(state, f, default_flow_style=False, sort_keys=False)
+                except Exception:
+                    logger.exception("failed to increment transforms in state")
         elif route["action"] == "state":
             try:
                 body_obj = json.loads(body) if body.strip() else {}
@@ -331,9 +401,11 @@ class Handler(BaseHTTPRequestHandler):
                         _log_jq_stderr(r.stderr or "")
                         current_state = json.loads(r.stdout) if r.returncode == 0 else {}
                     else:
-                        current_state = {"counter": 0}
+                        current_state = {"counter": 0, "transforms": 0}
                     if "counter" not in current_state:
                         current_state["counter"] = 0
+                    if "transforms" not in current_state:
+                        current_state["transforms"] = 0
                     state_input = {
                         "request": {
                             "method": "POST",

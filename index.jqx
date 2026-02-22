@@ -1,95 +1,243 @@
 <!DOCTYPE html>
-<!-- index.jqx — Production front page. Served by the jqx template engine with
-     visitor counter and <If> conditionals. Do not rely on index.jq as fallback;
-     empty jqx output results in HTTP 500. For static local use, run index.jq via make run. -->
 <html lang="en">
+
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>jqyml – YAML to JSON</title>
-  <Head />
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #f8f8f8; }
-    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
-    p { color: #555; margin-bottom: 1rem; }
-    form { display: flex; flex-direction: column; gap: 0.75rem; }
-    label { font-size: 0.875rem; font-weight: 500; }
-    textarea { width: 100%; min-height: 12rem; padding: 0.75rem; font-family: ui-monospace, monospace; font-size: 0.875rem; border: 1px solid #ccc; border-radius: 6px; resize: vertical; }
-    textarea:focus { outline: none; border-color: #333; }
-    button { align-self: start; padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; color: #fff; background: #333; border: none; border-radius: 6px; cursor: pointer; }
-    button:hover { background: #555; }
-    .examples { margin-top: 0.5rem; margin-bottom: 0.5rem; }
-    .examples-label { font-size: 0.875rem; font-weight: 500; color: #555; margin-bottom: 0.35rem; display: block; }
-    .examples-btns { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-    .examples-btns button { background: #e0e0e0; color: #1a1a1a; padding: 0.35rem 0.6rem; font-size: 0.8125rem; }
-    .examples-btns button:hover { background: #ccc; }
-    #result { margin-top: 1rem; }
-    #result pre { margin: 0; padding: 1rem; font-size: 0.8125rem; background: #1a1a1a; color: #e0e0e0; border-radius: 6px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
-    #result .error { background: #4a1a1a; color: #f0c0c0; }
-    #result .empty { color: #888; font-style: italic; }
-    header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #ddd; }
-    header h1 { margin: 0; font-size: 1.25rem; }
-    .counter-box { padding: 0.5rem 0; font-size: 0.875rem; }
-    .counter-box .count { font-weight: 600; }
-  </style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>jqyml – YAML to JSON</title>
+
+    <Head />
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 42rem;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            color: #1a1a1a;
+            background: #f8f8f8;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            color: #555;
+            margin-bottom: 1rem;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 12rem;
+            padding: 0.75rem;
+            font-family: ui-monospace, monospace;
+            font-size: 0.875rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            resize: vertical;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #333;
+        }
+
+        button {
+            align-self: start;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #fff;
+            background: #333;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #555;
+        }
+
+        .examples {
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .examples-label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #555;
+            margin-bottom: 0.35rem;
+            display: block;
+        }
+
+        .examples-btns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+
+        .examples-btns button {
+            background: #e0e0e0;
+            color: #1a1a1a;
+            padding: 0.35rem 0.6rem;
+            font-size: 0.8125rem;
+        }
+
+        .examples-btns button:hover {
+            background: #ccc;
+        }
+
+        #result {
+            margin-top: 1rem;
+        }
+
+        #result pre {
+            margin: 0;
+            padding: 1rem;
+            font-size: 0.8125rem;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            border-radius: 6px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        #result .error {
+            background: #4a1a1a;
+            color: #f0c0c0;
+        }
+
+        #result .empty {
+            color: #888;
+            font-style: italic;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #ddd;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+
+        .counter-box {
+            padding: 0.5rem 0;
+            font-size: 0.875rem;
+        }
+
+        .counter-box .count {
+            font-weight: 600;
+        }
+
+        .convert-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .transform-count {
+            font-size: 0.875rem;
+            color: #555;
+        }
+    </style>
 </head>
+
 <body>
-  <Header />
-  <h1>YAML to JSON</h1>
-  <p>Paste YAML below and click Convert to get JSON. Supports anchors (&amp;name) and aliases (*name).</p>
-  <form id="f">
-    <label for="yaml">YAML</label>
-    <textarea id="yaml" name="yaml" placeholder="e.g.&#10;foo: 1&#10;bar: hello"></textarea>
-    <div class="examples">
-      <span class="examples-label">Load example:</span>
-      <div class="examples-btns">
-        <button type="button" data-example="simple">Simple</button>
-        <button type="button" data-example="anchors">Anchors &amp; merge</button>
-        <button type="button" data-example="lists">Lists &amp; nested</button>
-        <button type="button" data-example="block">Block scalar</button>
-        <button type="button" data-example="keys-with-spaces">Keys with spaces</button>
-      </div>
-    </div>
-    <button type="submit">Convert</button>
-  </form>
-  <div id="result"></div>
-  <script>
-    var exampleYamls = {
-      simple: "name: jqyml\nversion: 1\nenabled: true\ncount: 42",
-      anchors: "defaults: &defaults\n  host: localhost\n  port: 80\ndev:\n  <<: *defaults\n  port: 8080",
-      lists: "items:\n  - one\n  - two\nnested:\n  key: value\n  enabled: true",
-      block: "literal_block: |\n  Hello\n  World\nfolded_block: >\n  Foo\n  Bar",
-      "keys-with-spaces": "my key: value\nanother key: 42"
-    };
-    document.querySelectorAll(".examples-btns button").forEach(function(btn) {
-      btn.addEventListener("click", function() {
-        var yaml = exampleYamls[this.getAttribute("data-example")];
-        if (yaml) document.getElementById("yaml").value = yaml;
-      });
-    });
-    document.getElementById("f").onsubmit = function(e) {
-      e.preventDefault();
-      var result = document.getElementById("result");
-      var yaml = document.getElementById("yaml").value;
-      if (!yaml.trim()) { result.innerHTML = '<pre class="empty">Paste some YAML first.</pre>'; return; }
-      result.innerHTML = '<pre>Converting…</pre>';
-      fetch("/", { method: "POST", body: yaml, headers: { "Content-Type": "text/plain" } })
-        .then(function(r) { return r.text().then(function(t) { return { ok: r.ok, status: r.status, body: t }; }); })
-        .then(function(x) {
-          var pre = document.createElement("pre");
-          pre.textContent = x.body;
-          if (!x.ok) pre.classList.add("error");
-          result.innerHTML = "";
-          result.appendChild(pre);
-        })
-        .catch(function(err) { result.innerHTML = '<pre class="error">' + err + '</pre>'; });
-    };
-    function showCount(n) { document.getElementById("count").textContent = (typeof n === "number" ? (n === 0 ? "No visitors" : n) : "—"); }
-    fetch("/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ counter: 1 }) })
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(s) { if (s && typeof s.counter === "number") showCount(s.counter); })
-      .catch(function() {});
-  </script>
+    <Header />
+    <h1>YAML to JSON</h1>
+    <p>Paste YAML below and click Convert to get JSON. Supports anchors (&amp;name) and aliases (*name).</p>
+    <form id="f">
+        <label for="yaml">YAML</label>
+        <textarea id="yaml" name="yaml" placeholder="e.g.&#10;foo: 1&#10;bar: hello"></textarea>
+        <div class="examples">
+            <span class="examples-label">Load example:</span>
+            <div class="examples-btns">
+                <button type="button" data-example="simple">Simple</button>
+                <button type="button" data-example="anchors">Anchors &amp; merge</button>
+                <button type="button" data-example="lists">Lists &amp; nested</button>
+                <button type="button" data-example="block">Block scalar</button>
+                <button type="button" data-example="keys-with-spaces">Keys with spaces</button>
+            </div>
+        </div>
+        <div class="convert-row">
+            <button type="submit">Convert</button>
+            <span id="transform-count" class="transform-count" data-transforms="{transforms}"><If transforms_one>{transforms} transform</If><If transforms_plural>{transforms} transforms</If></span>
+        </div>
+    </form>
+    <div id="result"></div>
+    <script>
+        var exampleYamls = {
+            simple: "name: jqyml\nversion: 1\nenabled: true\ncount: 42",
+            anchors: "defaults: &defaults\n  host: localhost\n  port: 80\ndev:\n  <<: *defaults\n  port: 8080",
+            lists: "items:\n  - one\n  - two\nnested:\n  key: value\n  enabled: true",
+            block: "literal_block: |\n  Hello\n  World\nfolded_block: >\n  Foo\n  Bar",
+            "keys-with-spaces": "my key: value\nanother key: 42"
+        };
+        document.querySelectorAll(".examples-btns button").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                var yaml = exampleYamls[this.getAttribute("data-example")];
+                if (yaml) document.getElementById("yaml").value = yaml;
+            });
+        });
+        document.getElementById("f").onsubmit = function (e) {
+            e.preventDefault();
+            var result = document.getElementById("result");
+            var yaml = document.getElementById("yaml").value;
+            if (!yaml.trim()) {result.innerHTML = '<pre class="empty">Paste some YAML first.</pre>'; return;}
+            result.innerHTML = '<pre>Converting…</pre>';
+            fetch("/", {method: "POST", body: yaml, headers: {"Content-Type": "text/plain"}})
+                .then(function (r) {return r.text().then(function (t) {return {ok: r.ok, status: r.status, body: t};});})
+                .then(function (x) {
+                    var pre = document.createElement("pre");
+                    pre.textContent = x.body;
+                    if (!x.ok) pre.classList.add("error");
+                    result.innerHTML = "";
+                    result.appendChild(pre);
+                    if (x.ok) {
+                        var el = document.getElementById("transform-count");
+                        if (el) {
+                            var n = parseInt(el.getAttribute("data-transforms") || "0", 10) + 1;
+                            el.setAttribute("data-transforms", n);
+                            el.textContent = n + " transform" + (n !== 1 ? "s" : "");
+                        }
+                    }
+                })
+                .catch(function (err) {result.innerHTML = '<pre class="error">' + err + '</pre>';});
+        };
+        function showCount(n) {document.getElementById("count").textContent = (typeof n === "number" ? (n === 0 ? "No visitors" : n) : "—");}
+        fetch("/state", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({counter: 1})})
+            .then(function (r) {return r.ok ? r.json() : null;})
+            .then(function (s) {if (s && typeof s.counter === "number") showCount(s.counter);})
+            .catch(function () { });
+    </script>
 </body>
+
 </html>

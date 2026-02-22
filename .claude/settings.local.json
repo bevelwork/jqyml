@@ -11,7 +11,9 @@
       "Bash(jq:*)",
       "Bash(printf {\"literal_block\":\"Hello\\\\\\\\nWorld\\\\\\\\n\",\"folded_block\":\"Foo Bar\\\\\\\\n\"}\\\\n:*)",
       "Bash(echo === expected file \\(hex\\) ===:*)",
-      "Bash(make test-jqx:*)"
+      "Bash(make test-jqx:*)",
+      "Bash(grep:*)",
+      "Bash(make test-server:*)"
     ]
   }
 }

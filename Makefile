@@ -47,7 +47,7 @@ test-anchors:
 # Run YAML parser and jqx tests.
 # If tests/<name>.expected exists, compare run.jq output to it; else only check exit code.
 TEST_YAMLS := $(wildcard tests/*.yaml)
-test: test-jqx test-state test-anchors test-speed
+test: test-jqx test-state test-anchors test-speed test-server
 	@failed=0; \
 	for f in $(TEST_YAMLS); do \
 	  echo "Testing $$f..."; \
@@ -89,7 +89,7 @@ down:
 TEST_PORT ?= 18888
 test-server:
 	@dd if=/dev/zero of=/tmp/jqyml_big bs=1000001 count=1 2>/dev/null; \
-	cd $(JQYML_DIR) && PORT=$(TEST_PORT) python3 server.py >/tmp/jqyml_server.log 2>&1 & pid=$$!; \
+	cd $(JQYML_DIR) && PORT=$(TEST_PORT) /usr/bin/python3 server.py >/tmp/jqyml_server.log 2>&1 & pid=$$!; \
 	sleep 1; \
 	up=$$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 http://127.0.0.1:$(TEST_PORT)/ 2>/dev/null); \
 	if [ "$$up" = "000" ] || [ -z "$$up" ]; then \
@@ -106,15 +106,18 @@ test-server:
 	code=$$(curl -s -o /tmp/jqyml_state -w "%{http_code}" http://127.0.0.1:$(TEST_PORT)/state 2>/dev/null); \
 	if [ "$$code" != "200" ]; then echo "  FAILED: GET /state returned $$code (expected 200)"; failed=$$((failed+1)); fi; \
 	grep -q '"counter"' /tmp/jqyml_state 2>/dev/null || { echo "  FAILED: GET /state body should contain \"counter\""; failed=$$((failed+1)); }; \
+	code=$$(curl -s -o /tmp/jqyml_index -w "%{http_code}" http://127.0.0.1:$(TEST_PORT)/ 2>/dev/null); \
+	if [ "$$code" != "200" ]; then echo "  FAILED: GET / returned $$code (expected 200)"; failed=$$((failed+1)); fi; \
+	grep -q '<!DOCTYPE html>' /tmp/jqyml_index 2>/dev/null || { echo "  FAILED: GET / body should contain '<!DOCTYPE html>' (got error output?)"; cat /tmp/jqyml_index >&2; failed=$$((failed+1)); }; \
 	kill $$pid 2>/dev/null || true; \
-	rm -f /tmp/jqyml_big /tmp/jqyml_413 /tmp/jqyml_404 /tmp/jqyml_state /tmp/jqyml_server.log; \
-	if [ $$failed -eq 0 ]; then echo "test-server: 413, 404, GET /state OK"; else echo "$$failed check(s) failed"; exit 1; fi
+	rm -f /tmp/jqyml_big /tmp/jqyml_413 /tmp/jqyml_404 /tmp/jqyml_state /tmp/jqyml_index /tmp/jqyml_server.log; \
+	if [ $$failed -eq 0 ]; then echo "test-server: 413, 404, GET /state, GET / OK"; else echo "$$failed check(s) failed"; exit 1; fi
 
 # Speed test: run run.jq on SPEED_YAML ITERATIONS times; report total and per-iteration time.
 # Override: make speed ITERATIONS=1000 SPEED_YAML=tests/14_anchors_used.yaml
 test-speed:
 	@echo "Running speed test ($(ITERATIONS) iterations)..."; \
-	cd $(JQYML_DIR) && ITERATIONS="$(ITERATIONS)" SPEED_YAML="$(SPEED_YAML)" python3 scripts/speed.py
+	cd $(JQYML_DIR) && ITERATIONS="$(ITERATIONS)" SPEED_YAML="$(SPEED_YAML)" /usr/bin/python3 scripts/speed.py
 
 speed: test-speed
 

@@ -26,7 +26,7 @@ def find_matching_endif($s; $from):
 
 # Expand the first <If name>content</If> block; include content only if $vars[name] is truthy.
 def expand_one_if($vars):
-  . as $t
+  (. // "") as $t
   | ($t | index("<If ")) as $start
   | if $start == null then $t
     else ($t[$start:] | index(">")) as $tag_len
@@ -52,7 +52,7 @@ def expand_if($vars):
 
 # Expand the first <For var key>content</For> block; return expanded string or original if none.
 def expand_one_for($vars):
-  . as $t
+  (. // "") as $t
   | ($t | index("<For ")) as $start
   | if $start == null then $t
     else ($t[$start:] | index(">")) as $tag_len
@@ -79,14 +79,14 @@ def expand_for($vars):
   | if $next == . then . else $next | expand_for($vars) end;
 
 def substitute_vars($vars):
-  reduce ([scan("\\{[a-zA-Z0-9_]+\\}")] | unique[]) as $ph (
+  (. // "") | reduce ([scan("\\{[a-zA-Z0-9_]+\\}")] | unique[]) as $ph (
     .;
     gsub($ph; ($vars[$ph[1:-1]] // "" | tostring))
   );
 
 # Render a component string with the same pipeline (if/for/vars)
 def render_component($comp; $vars):
-  $comp | expand_if($vars) | expand_for($vars) | substitute_vars($vars);
+  ($comp // "") | expand_if($vars) | expand_for($vars) | substitute_vars($vars);
 
 # Escape replacement string for gsub (so & and \ are literal)
 def escape_replacement:
@@ -108,7 +108,7 @@ def _first_component_tag($t; $components):
         elif $p2 != null then $p2
         else null end) as $pos
       | if $pos != null then
-          (($t[$pos:] | index(">")) + 1) as $len
+          (($name | length) + 4) as $len
         | { pos: $pos, len: $len, name: $name }
         else null end ]
   | map(select(. != null))
@@ -119,24 +119,26 @@ def expand_one_include($vars; $components):
   . as $t
   | _first_component_tag($t; $components) as $m
   | if $m == null then $t
-    else ($components[$m.name] | render_component(.; $vars) | escape_replacement) as $repl
+    else ((($components[$m.name] // "") | render_component(.; $vars) | escape_replacement) // "") as $repl
     | $t[0:$m.pos] + $repl + $t[$m.pos + $m.len:]
     end;
 
 def expand_includes($vars; $components):
-  if ($components | keys | length) == 0 then .
+  (. // "") | if ($components | keys | length) == 0 then .
   else expand_one_include($vars; $components) as $next
   | if $next == . then . else $next | expand_includes($vars; $components) end
   end;
 
-# Build components map from rawfiles ($header -> "Header"). Pass empty.jqx when no components needed.
+# Build components map from rawfiles ($header -> "Header", $head -> "Head"). Pass empty.jqx when no components needed.
 def components_from_rawfiles:
-  (if ($header | length) > 0 then { "Header": $header } else {} end);
+  (if ($header | length) > 0 then { "Header": $header } else {} end)
+  + (if ($head | length) > 0 then { "Head": $head } else {} end);
 
 . as $vars
 | components_from_rawfiles as $components
-| ($tmpl | gsub("\r\n"; "\n"))
-| expand_includes($vars; $components)
-| expand_if($vars)
-| expand_for($vars)
-| substitute_vars($vars)
+| (($tmpl // "") | gsub("\r\n"; "\n"))
+| expand_includes($vars; $components) as $s1
+| ($s1 | expand_if($vars)) as $s2
+| ($s2 | expand_for($vars)) as $s3
+| ($s3 | substitute_vars($vars)) as $s4
+| (if $s4 != null and ($s4 | length) > 0 then $s4 elif $s1 != null then $s1 else "FALLBACK" end)
