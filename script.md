@@ -2,13 +2,13 @@
 
 I like `jq`.
 
-Its a beautifully simple tool. It formats my grabage json.
+It's a beautifully simple tool. It formats my garbage json.
 
 ```bash
-echo '{{"action": "Work it","metric": "Harder","process": "Make it","optimization": "Better","execution": "Do it","velocity": "Faster","outcome": "Makes us stronger","schedule": {       "frequency": "More than ever","interval": "Hour after hour","is_finished": false,"status": "Our work is never over"     } | jq
+echo '{"action": "Work it","metric": "Harder","process": "Make it","optimization": "Better","execution": "Do it","velocity": "Faster","outcome": "Makes us stronger","schedule": {"frequency": "More than ever","interval": "Hour after hour","is_finished": false,"status": "Our work is never over"}}' | jq
 ```
 
-Its a wonderful convenience, letting me select just what I want
+It's a wonderful convenience, letting me select just what I want
 
 ```bash
 echo '["react", "rails", "ember", "angular", "vue", "svelte", "IIS", "htmx"]' | jq -r '.[7]'
@@ -17,7 +17,7 @@ echo '["react", "rails", "ember", "angular", "vue", "svelte", "IIS", "htmx"]' | 
 And it sprinkles in just the right amount control allowing me to update just the small things that I need to.
 
 ```bash
-echo '{"amplifier: {"gain": 10}}' | jq '.amplifier.gain += 1'
+echo '{"amplifier": {"gain": 10}}' | jq '.amplifier.gain += 1'
 ```
 
 > Theodore: 
@@ -60,14 +60,14 @@ Wouldn't be nice if `jq` could just solve the problem of world YAML.
 
 > [Keyboard clacking] and scrolling test suite. Fade to black.
 
-Our first stop is checking for dealbreakers, and its about time to talk about `functional programming`.
+Our first stop is checking for dealbreakers, and it's about time to talk about `functional programming`.
 
 > [Attanborough voice]
 
-Functional programming is converned with describing a process instead of describing a thing. 
+Functional programming is concerned with describing a process instead of describing a thing.
 Balls can bounce, people walk, and programmers refactor.
 
-Chaining processes together allows quickly describe complex processes.
+Chaining processes together allows you to quickly describe complex processes.
 
 ```
 ball.bounce().paint("red").bounce().paint("blue")
@@ -81,7 +81,7 @@ So `jq` is functional, and on purpose doesn't provide a few things we need to do
 
 For example, we can't connect to a port, read a file, or save a file. Not a big deal, but we'll have to provide some glue.
 
-So no, dealbreakers. So let's build this.
+So no dealbreakers. Let's build this.
 
 ```jq
 def parse_yaml:
@@ -107,7 +107,7 @@ and we just "process" the line.
   | if .root_is_list then .stack[1].obj + [.stack[0].obj] else .stack[.stack | length - 1].obj end;
 ```
 
-Then this bit glues it back together for us. Well that its right, we're done...
+Then this bit glues it back together for us. Well, that's right, we're done...
 Well, what's the processing bit?
 
 Well, it breaks down into a flow like this:
@@ -124,10 +124,10 @@ echo "mykey: myvalue" | jq -R -s -rf run.jq
 # {"mykey": "myvalue"}
 ```
 
-Well that just a great albeit a little simple, its not a like you can...
+Well, that's a great result, albeit a little simple — it's not like you can...
 
 ```bash
-jr -R -s -rf run.jq < EOF >
+jq -R -s -rf run.jq << EOF
 
 defaults: &defaults
   host: bevel.work
@@ -165,7 +165,7 @@ you should create a cheap "jqx" wrapper...
 
 > Navigate to jq.bevel.work
 
-So now wwe parse pesky markdown language files in the stule and simplicity of `jq`. 
+So now we parse pesky YAML files in the style and simplicity of `jq`.
 If you'd like to be one of the few to play with it I encourage you go to `http://jq.bevel.work`
 before someone figures out how to get my Regex to explode.
 
