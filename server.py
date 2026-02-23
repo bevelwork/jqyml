@@ -47,6 +47,7 @@ def _log_jq_stderr(stderr: str) -> None:
         except json.JSONDecodeError:
             logger.debug("jq: %s", s)
 
+
 NOT_FOUND_VARS = {
     "status": "404",
     "message": "Not Found.",
@@ -81,7 +82,8 @@ def _sitemap_xml() -> str:
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         f'  <url><loc>{SITE_URL}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n'
-        f'  <url><loc>{SITE_URL}/old</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>\n'
+        f'  <url><loc>{
+            SITE_URL}/old</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>\n'
         '</urlset>\n'
     )
 
@@ -106,9 +108,19 @@ INDEX_JQX = JQ + [
 INDEX_OLD_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index_old.jq")]
 STATE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "state.jq")]
 _EMPTY_JQX = os.path.join(APP_ROOT, "empty.jqx")
-NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "404.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
-BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "400.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
-UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "401.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "404.jqx"), "--rawfile",
+                     "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(
+    APP_ROOT, "400.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(
+    APP_ROOT, "401.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+BUILT_WITH_JQX = JQ + [
+    "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "built_with.jqx"),
+    "--rawfile", "header", _EMPTY_JQX,
+    "--rawfile", "head", _EMPTY_JQX,
+    "-f", os.path.join(APP_ROOT, "jqx.jq"),
+]
+BUILT_WITH_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "built_with.jq")]
 PARSE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "parse.jq")]
 
 
@@ -119,6 +131,8 @@ def parse_route(method: str, path: str, body: str) -> dict:
         return {"action": "index"}
     if method == "GET" and p == "/old":
         return {"action": "index_old"}
+    if method == "GET" and p == "/built_with":
+        return {"action": "built_with"}
     if method == "GET" and p == "/admin":
         return {"action": "unauthorized"}
     if method == "GET" and p == "/state":
@@ -252,7 +266,8 @@ class Handler(BaseHTTPRequestHandler):
                 out = r.stdout if r.returncode == 0 else r.stderr or "error"
                 status = 200 if r.returncode == 0 else 500
                 if r.returncode != 0:
-                    logger.error("index.jqx jq exit %s stderr: %s", r.returncode, (r.stderr or "")[:500])
+                    logger.error("index.jqx jq exit %s stderr: %s",
+                                 r.returncode, (r.stderr or "")[:500])
                 if r.returncode == 0 and (not out or not out.strip()):
                     logger.warning("index.jqx produced empty output; falling back to index.jq")
                     try:
@@ -277,9 +292,59 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(out.encode("utf-8"))
+        elif route["action"] == "built_with":
+            try:
+                state = self._get_current_state()
+                count = state.get("counter", 0)
+                transforms = state.get("transforms", 0)
+                index_vars = {
+                    "count": count,
+                    "count_is_zero": count == 0,
+                    "count_gt_0": count > 0,
+                    "transforms": transforms,
+                    "transforms_one": transforms == 1,
+                    "transforms_plural": transforms != 1,
+                }
+                r = subprocess.run(
+                    BUILT_WITH_JQX,
+                    input=json.dumps(index_vars),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=APP_ROOT,
+                )
+                _log_jq_stderr(r.stderr or "")
+                out = r.stdout if r.returncode == 0 else r.stderr or "error"
+                status = 200 if r.returncode == 0 else 500
+                if r.returncode == 0 and (not out or not out.strip()):
+                    logger.warning(
+                        "built_with.jqx produced empty output; falling back to built_with.jq")
+                    try:
+                        r2 = subprocess.run(
+                            BUILT_WITH_JQ,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            cwd=APP_ROOT,
+                        )
+                        _log_jq_stderr(r2.stderr or "")
+                        if r2.returncode == 0 and (r2.stdout or "").strip():
+                            out, status = r2.stdout, 200
+                        else:
+                            out, status = "built_with.jqx produced empty output", 500
+                    except Exception:
+                        out, status = "built_with.jqx produced empty output", 500
+            except Exception as e:
+                logger.exception("built_with render failed")
+                out, status = str(e), 500
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(out.encode("utf-8"))
         elif route["action"] == "index_old":
             try:
-                r = subprocess.run(INDEX_OLD_JQ, capture_output=True, text=True, timeout=5, cwd=APP_ROOT)
+                r = subprocess.run(INDEX_OLD_JQ, capture_output=True,
+                                   text=True, timeout=5, cwd=APP_ROOT)
                 _log_jq_stderr(r.stderr or "")
                 out = r.stdout if r.returncode == 0 else r.stderr or "error"
                 status = 200 if r.returncode == 0 else 500
@@ -429,13 +494,15 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_response(500)
                         self.send_header("Content-Type", "application/json")
                         self.end_headers()
-                        self.wfile.write(json.dumps({"message": r.stderr or "state.jq failed"}).encode())
+                        self.wfile.write(json.dumps(
+                            {"message": r.stderr or "state.jq failed"}).encode())
                         return
                     result = json.loads(r.stdout)
                     if result.get("valid"):
                         os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
                         with open(STATE_PATH, "w") as f:
-                            yaml.dump(result["new_state"], f, default_flow_style=False, sort_keys=False)
+                            yaml.dump(result["new_state"], f,
+                                      default_flow_style=False, sort_keys=False)
                         self.send_response(200)
                         self.send_header("Content-Type", "application/json")
                         self.end_headers()

@@ -10,6 +10,8 @@ include "log";
     { action: "index" }
   elif $method == "GET" and $path == "/old" then
     { action: "index_old" }
+  elif $method == "GET" and $path == "/built_with" then
+    { action: "built_with" }
   elif $method == "GET" and $path == "/admin" then
     { action: "unauthorized" }
   elif $method == "GET" and $path == "/state" then

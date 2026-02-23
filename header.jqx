@@ -1,4 +1,7 @@
 <header>
-  <h1>jqyml</h1>
+  <div class="header-left">
+    <h1>jqyml</h1>
+    <a href="/built_with" class="built-with-link">Built with</a>
+  </div>
   <div class="counter-box">Visitor count: <span id="count" class="count"><If count_is_zero>No visitors</If><If count_gt_0>{count}</If></span></div>
 </header>
