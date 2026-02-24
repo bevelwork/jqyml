@@ -373,6 +373,7 @@ class Handler(BaseHTTPRequestHandler):
                 if n is not None:
                     cmd = JQ + [
                         "-n", "-r", "--argjson", "generations", str(n),
+                        "--argjson", "width", "79",
                         "-f", os.path.join(APP_ROOT, "rule110.jq"),
                     ]
                     r = subprocess.run(

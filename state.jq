@@ -14,6 +14,6 @@ include "log";
   elif ($ct_ok | not) then
     { valid: false, status: 400, message: "Content-Type must be application/json" }
   else
-    { valid: true, new_state: (.current_state | .counter += 1 | .transforms = (.transforms // 0)) }
+    { valid: true, new_state: (.current_state + { counter: ((.current_state.counter // 0) + 1), transforms: (.current_state.transforms // 0) }) }
   end
   | . as $res | slog("info"; "state_validate"; {"valid": $res.valid}) | $res

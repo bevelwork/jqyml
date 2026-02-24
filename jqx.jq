@@ -5,6 +5,7 @@
 # - <If name>content</If> is included only when .name is truthy. Nested <If> is supported.
 # - <For iter list_key>content with {iter}</For> is repeated for each element of .list_key.
 # - <Name /> includes the component template named Name (from $header etc.); component is processed with same vars.
+# - If the final result ($s4) is empty, output falls back to $s1 (template after includes, before if/for/vars) so the page still renders; otherwise output "".
 
 # Return index in $s of the matching </If> for the block starting after an opening <If> at depth 1.
 # $from is the index of the first character after the opening tag (after ">").
@@ -124,6 +125,12 @@ def _first_component_tag($t; $components):
            else { pos: $p2, len: $tag_len } end) else null end) as $m2
       | ($m0 // $mn // $m4 // $m1 // $m2) as $m
       | if $m != null then $m + { name: $name } else null end ]
+  | map(select(. != null))
+  | map(. as $m
+      | $t[$m.pos:$m.pos+$m.len] as $seg
+      | if ($seg | startswith("<") or startswith("\n") or startswith(" ")) then $m
+        elif $m.pos > 0 and ($t[$m.pos-1:$m.pos] == "<") then { pos: ($m.pos - 1), len: ($m.len + 1), name: $m.name }
+        else null end)
   | map(select(. != null))
   | if length == 0 then null else min_by(.pos) end;
 
