@@ -28,8 +28,6 @@ We owe a huge thanks to **jq’s authors and maintainers**—including Stephen D
 
 ---
 
-## Make better use of your time
-
 Life’s too short to:
 
 - Manually convert YAML to JSON in a dodgy online converter that wants your email

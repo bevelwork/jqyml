@@ -49,7 +49,7 @@
   "  <p>The main index, error pages (404, 400, 401), and this built_with page are all jqx templates rendered with jq.</p>",
   "  <h2>Source</h2>",
   "  <p>Everything is open source. Check out the repo:</p>",
-  "  <p><a href=\"https://github.com/bevelwork/jq\" target=\"_blank\" rel=\"noopener\">github.com/bevelwork/jq</a></p>",
+  "  <p><a href=\"https://github.com/bevelwork/jqyml\" target=\"_blank\" rel=\"noopener\">github.com/bevelwork/jqyml</a></p>",
   "  <p><a href=\"/\">← Back to converter</a></p>",
   "  <script>",
   "    fetch(\"/state\", { method: \"POST\", headers: { \"Content-Type\": \"application/json\" }, body: JSON.stringify({ counter: 1 }) })",

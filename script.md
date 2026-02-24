@@ -21,15 +21,9 @@ echo '{"amplifier": {"gain": 10}}' | jq '.amplifier.gain += 1'
 ```
 
 > Theodore: 
-> ...jq being practically a programming language (it’s probably Turing complete?)
+> ...jq being practically a programming language (it’s probably Turing complete?) you can find a way to do what is necessary.
 
 Wait, what?
-
-> [Brief aside: Turing]
-
-When we say something is *Turing complete*, we mean it can compute anything that a Turing machine can—that is, given enough time and space, it can simulate any well-defined algorithm. Alan Turing gave us a minimal model: a strip of tape, a head that reads and writes symbols, and a small set of rules that say "if you're in this state and you see this symbol, write that, move left or right, and go to that state." If a system can emulate that, it can run any computation. No infinite loops required for the *definition*—we're just saying the *language* or *machine* is powerful enough.
-
-A nice way to see that power without building a literal tape is *Rule 110*. It's a one-dimensional cellular automaton: you have a row of cells, each on or off. One simple rule decides the next row. For each cell you look at three neighbours—left, self, right—and the rule says: 111→0, 110→1, 101→1, 100→0, 011→1, 010→1, 001→1, 000→0. That's it. You start with a single "on" cell and step the rule over and over. The pattern that grows is chaotic, persistent, and it turns out *Rule 110 is Turing complete*. So this tiny rule, applied to a line of cells, can—in principle—compute anything. We'll use Rule 110 as our running example: if we can run it in jq, we're in the same league.
 
 [Keyboard clacking]
 
@@ -79,13 +73,11 @@ Chaining processes together allows you to quickly describe complex processes.
 ball.bounce().paint("red").bounce().paint("blue")
 ```
 
-Critically, functional eschews "side effects". Providing an input always yields the same output.
+But important to us is that functional programmers eschew "side effects". Generally you are allowed to read or modify things outside of the program. 
 
-> [Zach voice]
+This has a really nice aspect to it where, running the same code `n` will always give you the same results, Which you can't always promise in other cases.
 
-So `jq` is functional, and on purpose doesn't provide a few things we need to do our job.
-
-For example, we can't connect to a port, read a file, or save a file. Not a big deal, but we'll have to provide some glue.
+The downside is that when we need to connect to resources, we can't connect to a port, read or save a file. Not a big deal, but we'll have to provide some glue.
 
 So no dealbreakers. Let's build this.
 

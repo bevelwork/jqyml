@@ -54,7 +54,7 @@ Visitor count: &lt;If count_is_zero&gt;No visitors&lt;/If&gt;&lt;If count_gt_0&g
 
     <h2>Source</h2>
     <p>Everything is open source. Check out the repo:</p>
-    <p><a href="https://github.com/bevelwork/jq" target="_blank" rel="noopener">github.com/bevelwork/jq</a></p>
+    <p><a href="https://github.com/bevelwork/jqyml" target="_blank" rel="noopener">github.com/bevelwork/jqyml</a></p>
     <p><a href="/">← Back to converter</a></p>
 </body>
 
