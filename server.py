@@ -1,14 +1,77 @@
 #!/usr/bin/env python3
+import base64
+import hashlib
 import html as html_module
 import json
 import logging
 import os
+import struct
 import subprocess
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 import yaml
+
+# WebSocket (RFC 6455): handshake and text-frame helpers for /doom/ws
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+def _ws_accept_key(key: str) -> str:
+    """Compute Sec-WebSocket-Accept from Sec-WebSocket-Key."""
+    digest = hashlib.sha1((key.strip() + WS_GUID).encode()).digest()
+    return base64.b64encode(digest).decode()
+
+
+def _ws_read_frame(sock) -> str | None:
+    """Read one WebSocket text frame from client (masked). Returns payload as str or None on close/error."""
+    try:
+        header = sock.recv(2)
+        if len(header) < 2:
+            return None
+        opcode = header[0] & 0x0F
+        masked = (header[1] & 0x80) != 0
+        length = header[1] & 0x7F
+        if length == 126:
+            ext = sock.recv(2)
+            if len(ext) < 2:
+                return None
+            length = struct.unpack(">H", ext)[0]
+        elif length == 127:
+            ext = sock.recv(8)
+            if len(ext) < 8:
+                return None
+            length = struct.unpack(">Q", ext)[0]
+        if not masked or length > 1_000_000:
+            return None
+        mask = sock.recv(4)
+        if len(mask) < 4:
+            return None
+        payload = b""
+        while len(payload) < length:
+            chunk = sock.recv(min(65536, length - len(payload)))
+            if not chunk:
+                return None
+            payload += chunk
+        if opcode == 0x08:  # close
+            return None
+        data = bytes(payload[i] ^ mask[i % 4] for i in range(len(payload)))
+        return data.decode("utf-8", errors="replace")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _ws_write_frame(sock, payload: str) -> None:
+    """Send one WebSocket text frame (unmasked) to client."""
+    data = payload.encode("utf-8")
+    length = len(data)
+    if length < 126:
+        header = struct.pack(">BB", 0x81, length)
+    elif length < 65536:
+        header = struct.pack(">BBH", 0x81, 126, length)
+    else:
+        header = struct.pack(">BBQ", 0x81, 127, length)
+    sock.sendall(header + data)
 
 logger = logging.getLogger("jqyml")
 
@@ -84,6 +147,7 @@ def _sitemap_xml() -> str:
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         f'  <url><loc>{SITE_URL}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n'
         f'  <url><loc>{SITE_URL}/old</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>\n'
+        f'  <url><loc>{SITE_URL}/doom</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>\n'
         '</urlset>\n'
     )
 
@@ -143,6 +207,13 @@ FIZZBUZZ_JQX = JQ + [
     "-f", os.path.join(APP_ROOT, "jqx.jq"),
 ]
 PARSE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "parse.jq")]
+DOOM_JQ_DIR = os.path.join(APP_ROOT, "doom_jq", "jq")
+DOOM_LOOP_JQ = JQ + ["-L", DOOM_JQ_DIR, "-f", os.path.join(DOOM_JQ_DIR, "loop.jq")]
+DOOM_JQX = JQ + [
+    "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "doom.jqx"),
+    "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "--rawfile", "footer", _EMPTY_JQX,
+    "-f", os.path.join(APP_ROOT, "jqx.jq"),
+]
 
 
 def parse_route(method: str, path: str, body: str) -> dict:
@@ -158,6 +229,12 @@ def parse_route(method: str, path: str, body: str) -> dict:
         return {"action": "rule110"}
     if method == "GET" and p == "/fizzbuzz":
         return {"action": "fizzbuzz"}
+    if method == "GET" and p == "/doom":
+        return {"action": "doom"}
+    if method == "GET" and p == "/doom/ws":
+        return {"action": "doom_ws"}
+    if method == "POST" and p == "/doom/tic":
+        return {"action": "doom_tic", "body": body or ""}
     if method == "GET" and p == "/admin":
         return {"action": "unauthorized"}
     if method == "GET" and p == "/state":
@@ -179,6 +256,13 @@ class Handler(BaseHTTPRequestHandler):
     def parse_route(self, method: str, path: str, body: str) -> dict:
         return parse_route(method, path, body)
 
+    def _safe_write(self, data: bytes) -> None:
+        """Write response body; ignore BrokenPipeError/ConnectionResetError if client disconnected."""
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def send_404(self):
         try:
             r = subprocess.run(
@@ -196,7 +280,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
-        self.wfile.write(body.encode("utf-8"))
+        self._safe_write(body.encode("utf-8"))
 
     def send_400(self, message: str, explanation: str = "400 - Bad Request / invalid user input."):
         vars_ = {"status": "400", "message": message, "explanation": explanation}
@@ -216,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(400)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
-        self.wfile.write(body.encode("utf-8"))
+        self._safe_write(body.encode("utf-8"))
 
     def send_401(self):
         try:
@@ -235,7 +319,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(401)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
-        self.wfile.write(body.encode("utf-8"))
+        self._safe_write(body.encode("utf-8"))
 
     def _get_current_state(self) -> dict:
         """Return current state (e.g. from state.yml); default counter 0."""
@@ -264,8 +348,52 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {"counter": 0, "transforms": 0}
 
+    def _doom_ws_loop(self, sock) -> None:
+        """Run game loop over WebSocket: read JSON { state, input }, run jq, send JSON { state, frame }."""
+        while True:
+            payload = _ws_read_frame(sock)
+            if payload is None:
+                break
+            try:
+                _ = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            try:
+                r = subprocess.run(
+                    DOOM_LOOP_JQ,
+                    input=payload,
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    cwd=APP_ROOT,
+                )
+                if r.returncode == 0 and r.stdout and r.stdout.strip():
+                    _ws_write_frame(sock, r.stdout.strip())
+            except Exception:
+                break
+
     def do_GET(self):
         route = self.parse_route("GET", self.path, "")
+        if route["action"] == "doom_ws":
+            key = self.headers.get("Sec-WebSocket-Key") or self.headers.get("sec-websocket-key")
+            upgrade = (self.headers.get("Upgrade") or self.headers.get("upgrade") or "").lower()
+            if key and "websocket" in upgrade:
+                accept = _ws_accept_key(key)
+                self.send_response(101, "Switching Protocols")
+                self.send_header("Upgrade", "websocket")
+                self.send_header("Connection", "Upgrade")
+                self.send_header("Sec-WebSocket-Accept", accept)
+                self.end_headers()
+                try:
+                    self._doom_ws_loop(self.connection)
+                except Exception:
+                    pass
+                return
+            self.send_response(400)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self._safe_write(b"Expected WebSocket upgrade")
+            return
         if route["action"] == "index":
             try:
                 state = self._get_current_state()
@@ -317,7 +445,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(out.encode("utf-8"))
+            self._safe_write(out.encode("utf-8"))
         elif route["action"] == "built_with":
             try:
                 state = self._get_current_state()
@@ -367,7 +495,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(out.encode("utf-8"))
+            self._safe_write(out.encode("utf-8"))
         elif route["action"] == "rule110":
             try:
                 state = self._get_current_state()
@@ -452,7 +580,81 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(out.encode("utf-8"))
+            self._safe_write(out.encode("utf-8"))
+        elif route["action"] == "doom":
+            try:
+                state = self._get_current_state()
+                count = state.get("counter", 0)
+                counter_html = "No visitors" if count == 0 else str(count)
+                # Inline script: game loop over WebSocket /doom/ws (one connection, stream tics). Break </script> so parser does not close early.
+                doom_script = (
+                    "<script>\n"
+                    "(function() {\n"
+                    "  var canvas = document.getElementById('doom-canvas');\n"
+                    "  if (!canvas) return;\n"
+                    "  var ctx = canvas.getContext('2d');\n"
+                    "  var keys = new Set();\n"
+                    "  var keyToName = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', KeyW: 'Up', KeyS: 'Down', KeyA: 'Left', KeyD: 'Right' };\n"
+                    "  function onKey(e, add) {\n"
+                    "    var name = keyToName[e.code];\n"
+                    "    if (name) { e.preventDefault(); if (add) keys.add(name); else keys.remove(name); }\n"
+                    "  }\n"
+                    "  document.addEventListener('keydown', function(e) { onKey(e, true); });\n"
+                    "  document.addEventListener('keyup', function(e) { onKey(e, false); });\n"
+                    "  var gameState = null;\n"
+                    "  var pending = false;\n"
+                    "  function drawFrame(frame) {\n"
+                    "    if (!frame || !frame.draw) return;\n"
+                    "    var w = frame.width || 320, h = frame.height || 200;\n"
+                    "    ctx.fillStyle = '#000';\n"
+                    "    ctx.fillRect(0, 0, w, h);\n"
+                    "    for (var i = 0; i < frame.draw.length; i++) {\n"
+                    "      var d = frame.draw[i];\n"
+                    "      ctx.fillStyle = d.color || '#333';\n"
+                    "      var r = d.rect;\n"
+                    "      if (r && r.length >= 4) ctx.fillRect(r[0], r[1], r[2], r[3]);\n"
+                    "    }\n"
+                    "  }\n"
+                    "  var wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/doom/ws';\n"
+                    "  var ws = new WebSocket(wsUrl);\n"
+                    "  function tick() {\n"
+                    "    if (!ws || ws.readyState !== WebSocket.OPEN || pending) { requestAnimationFrame(tick); return; }\n"
+                    "    pending = true;\n"
+                    "    ws.send(JSON.stringify({ state: gameState, input: { keys: Array.from(keys) } }));\n"
+                    "  }\n"
+                    "  ws.onmessage = function(e) {\n"
+                    "    pending = false;\n"
+                    "    try {\n"
+                    "      var data = JSON.parse(e.data);\n"
+                    "      gameState = data.state;\n"
+                    "      if (data.frame) drawFrame(data.frame);\n"
+                    "    } catch (err) {}\n"
+                    "    requestAnimationFrame(tick);\n"
+                    "  };\n"
+                    "  ws.onerror = ws.onclose = function() { pending = false; };\n"
+                    "  ws.onopen = function() { requestAnimationFrame(tick); };\n"
+                    "})();\n"
+                    "</scr" + "ipt>\n"
+                )
+                doom_vars = {"counter_html": counter_html, "doom_script": doom_script}
+                r = subprocess.run(
+                    DOOM_JQX,
+                    input=json.dumps(doom_vars),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=APP_ROOT,
+                )
+                _log_jq_stderr(r.stderr or "")
+                out = r.stdout if r.returncode == 0 else r.stderr or "error"
+                status = 200 if r.returncode == 0 else 500
+            except Exception as e:
+                logger.exception("doom page failed")
+                out, status = str(e), 500
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self._safe_write(out.encode("utf-8"))
         elif route["action"] == "fizzbuzz":
             try:
                 state = self._get_current_state()
@@ -523,7 +725,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(out.encode("utf-8"))
+            self._safe_write(out.encode("utf-8"))
         elif route["action"] == "index_old":
             try:
                 r = subprocess.run(INDEX_OLD_JQ, capture_output=True,
@@ -537,7 +739,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(out.encode("utf-8"))
+            self._safe_write(out.encode("utf-8"))
         elif route["action"] == "unauthorized":
             self.send_401()
         elif route["action"] == "state_read":
@@ -546,13 +748,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps(state).encode())
+                self._safe_write(json.dumps(state).encode())
             except Exception as e:
                 logger.exception("GET /state failed")
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"message": str(e)}).encode())
+                self._safe_write(json.dumps({"message": str(e)}).encode())
         elif route["action"] == "favicon":
             favicon = os.path.join(APP_ROOT, "favicon.ico")
             if os.path.isfile(favicon):
@@ -563,7 +765,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(data)))
                 self.send_header("Cache-Control", "max-age=86400")
                 self.end_headers()
-                self.wfile.write(data)
+                self._safe_write(data)
             else:
                 self.send_404()
         elif route["action"] == "robots":
@@ -572,14 +774,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            self._safe_write(data)
         elif route["action"] == "sitemap":
             data = _sitemap_xml().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/xml; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            self._safe_write(data)
         else:
             self.send_404()
 
@@ -590,11 +792,52 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(413)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"message": "Request entity too large"}).encode())
+            self._safe_write(json.dumps({"message": "Request entity too large"}).encode())
             return
         body = self.rfile.read(length).decode("utf-8", errors="replace")
         route = self.parse_route("POST", self.path, body)
-        if route["action"] == "convert":
+        if route["action"] == "doom_tic":
+            try:
+                payload = route.get("body", "{}").strip() or "{}"
+                r = subprocess.run(
+                    DOOM_LOOP_JQ,
+                    input=payload,
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    cwd=APP_ROOT,
+                )
+                _log_jq_stderr(r.stderr or "")
+                if r.returncode != 0:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self._safe_write(json.dumps({"error": r.stderr or "jq failed"}).encode())
+                    return
+                out = r.stdout.strip()
+                if not out:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self._safe_write(json.dumps({"error": "empty jq output"}).encode())
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self._safe_write(out.encode("utf-8"))
+            except subprocess.TimeoutExpired:
+                logger.error("POST /doom/tic timeout")
+                self.send_response(408)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self._safe_write(json.dumps({"error": "timeout"}).encode())
+            except Exception as e:
+                logger.exception("POST /doom/tic failed")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self._safe_write(json.dumps({"error": str(e)}).encode())
+        elif route["action"] == "convert":
             try:
                 r = subprocess.run(
                     RUN_JQ,
@@ -615,7 +858,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(out.encode("utf-8"))
+            self._safe_write(out.encode("utf-8"))
             if status == 200:
                 try:
                     with _state_lock:
@@ -677,7 +920,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_response(500)
                         self.send_header("Content-Type", "application/json")
                         self.end_headers()
-                        self.wfile.write(json.dumps(
+                        self._safe_write(json.dumps(
                             {"message": r.stderr or "state.jq failed"}).encode())
                         return
                     result = json.loads(r.stdout)
@@ -689,7 +932,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_response(200)
                         self.send_header("Content-Type", "application/json")
                         self.end_headers()
-                        self.wfile.write(json.dumps(result["new_state"]).encode())
+                        self._safe_write(json.dumps(result["new_state"]).encode())
                     else:
                         status = result.get("status", 400)
                         msg = result.get("message", "validation failed")
@@ -702,7 +945,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"message": str(e)}).encode())
+                self._safe_write(json.dumps({"message": str(e)}).encode())
         else:
             self.send_404()
 

@@ -1,4 +1,4 @@
-.PHONY: run test test-jqx test-state test-anchors test-server test-speed speed up send docker-up docker-down docker-send
+.PHONY: run test test-jqx test-state test-anchors test-server test-speed test-doom-jq test-doom-jq-frame test-doom-jq-loop test-doom-jq-runner speed up send docker-up docker-down docker-send
 
 JQYML_DIR := $(CURDIR)
 PORT := 8888
@@ -44,10 +44,35 @@ test-anchors:
 	done; \
 	[ $$failed -eq 0 ] && echo "All anchor tests passed." || { echo "$$failed anchor test(s) failed."; exit 1; }
 
+# Doom-in-jq (Phase 1): frame schema, game loop, runner.
+DOOM_JQ_DIR := $(JQYML_DIR)/doom_jq
+DOOM_JQ_JQ := $(DOOM_JQ_DIR)/jq
+test-doom-jq-frame:
+	@echo "Testing doom_jq frame.jq (static frame)..."; \
+	out=$$(cd $(JQYML_DIR) && jq -n -L doom_jq/jq -f doom_jq/jq/frame.jq -c 2>/dev/null); ret=$$?; \
+	if [ $$ret -ne 0 ]; then echo "  FAILED (jq exit $$ret)"; exit 1; fi; \
+	if ! echo "$$out" | diff -q - doom_jq/tests/frame_static.expected >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; echo "$$out" | diff - doom_jq/tests/frame_static.expected || true; exit 1; fi; \
+	echo "  OK"
+test-doom-jq-loop:
+	@echo "Testing doom_jq loop.jq (one tic)..."; \
+	out=$$(cd $(JQYML_DIR) && echo '{"state":null,"input":{"keys":[]}}' | jq -L doom_jq/jq -f doom_jq/jq/loop.jq -c 2>/dev/null); ret=$$?; \
+	if [ $$ret -ne 0 ]; then echo "  FAILED (jq exit $$ret)"; exit 1; fi; \
+	if ! echo "$$out" | diff -q - doom_jq/tests/loop_one_tic.expected >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; echo "$$out" | diff - doom_jq/tests/loop_one_tic.expected || true; exit 1; fi; \
+	echo "  OK"
+test-doom-jq-runner:
+	@echo "Testing doom_jq runner.py (--headless, --loop --headless)..."; \
+	cd $(JQYML_DIR) && python3 doom_jq/runner.py --headless 2>/dev/null; ret1=$$?; \
+	cd $(JQYML_DIR) && python3 doom_jq/runner.py --loop --headless 2>/dev/null; ret2=$$?; \
+	if [ $$ret1 -ne 0 ]; then echo "  FAILED runner --headless (exit $$ret1)"; exit 1; fi; \
+	if [ $$ret2 -ne 0 ]; then echo "  FAILED runner --loop --headless (exit $$ret2)"; exit 1; fi; \
+	echo "  OK"
+test-doom-jq: test-doom-jq-frame test-doom-jq-loop test-doom-jq-runner
+	@echo "All doom_jq tests passed."
+
 # Run YAML parser and jqx tests.
 # If tests/<name>.expected exists, compare run.jq output to it; else only check exit code.
 TEST_YAMLS := $(wildcard tests/*.yaml)
-test: test-jqx test-state test-anchors test-speed test-server
+test: test-jqx test-state test-anchors test-speed test-server test-doom-jq
 	@failed=0; \
 	for f in $(TEST_YAMLS); do \
 	  echo "Testing $$f..."; \

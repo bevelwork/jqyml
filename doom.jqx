@@ -4,9 +4,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>FizzBuzz - jqyml</title>
+    <title>Doom in jq - jqyml</title>
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
-    <meta name="description" content="FizzBuzz in jq: 1 to n, Fizz/Buzz/FizzBuzz.">
+    <meta name="description" content="Doom in jq: main menu and first level (E1M1). Keyboard only.">
     <style>
         * { box-sizing: border-box; }
         body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #e6edf3; background: #0d1117; }
@@ -18,19 +18,12 @@
         .counter-box { padding: 0.5rem 0; font-size: 0.875rem; }
         .counter-box .count { font-weight: 600; }
         h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
-        h2 { font-size: 1.15rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
         p { color: #8b949e; margin-bottom: 1rem; line-height: 1.5; }
-        pre, code { font-family: ui-monospace, monospace; font-size: 0.75rem; line-height: 1.3; background: #161b22; color: #c9d1d9; border-radius: 6px; }
-        pre { padding: 1rem; overflow: auto; margin: 0.5rem 0 1rem; white-space: pre; }
-        code { padding: 0.2em 0.4em; }
-        pre code { padding: 0; background: none; }
         a { color: #58a6ff; text-decoration: underline; }
         a:hover { color: #79b8ff; }
-        form { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem 1rem; margin-bottom: 1rem; }
-        label { font-size: 0.875rem; font-weight: 500; }
-        input[type="number"] { width: 5rem; padding: 0.35rem 0.5rem; font-size: 0.875rem; background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; }
-        button { padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; color: #fff; background: #238636; border: none; border-radius: 6px; cursor: pointer; }
-        button:hover { background: #2ea043; }
+        #doom-wrap { margin: 1rem 0; background: #000; display: inline-block; }
+        #doom-canvas { display: block; width: 320px; height: 200px; image-rendering: pixelated; image-rendering: crisp-edges; }
+        .doom-keys { font-size: 0.875rem; color: #8b949e; margin-top: 0.5rem; }
     </style>
 </head>
 
@@ -46,19 +39,15 @@
         <div class="counter-box">Visitor count: <span id="count" class="count">{counter_html}</span></div>
     </header>
 
-    <h1>FizzBuzz</h1>
-    <p>Classic FizzBuzz: for 1 to <em>n</em>, print the number, or "Fizz" (multiples of 3), "Buzz" (multiples of 5), or "FizzBuzz" (multiples of 15). This page runs it in <strong>jq</strong>.</p>
+    <h1>Doom in jq</h1>
+    <p>Main menu and first level (E1M1), driven by jq. <strong>Keyboard only:</strong> Arrow keys or WASD to move the box; no mouse.</p>
 
-    <form method="get" action="/fizzbuzz">
-        <label for="n">Up to (1–500):</label>
-        <input type="number" id="n" name="n" min="1" max="500" value="{n_display}" placeholder="30">
-        <button type="submit">Run</button>
-    </form>
+    <div id="doom-wrap">
+        <canvas id="doom-canvas" width="320" height="200"></canvas>
+    </div>
+    <p class="doom-keys">Arrow keys or WASD — bouncing box (Phase 1.1)</p>
 
-    <h2>Code</h2>
-    <pre><code>{code_snippet}</code></pre>
-
-    {output_block}
+    {doom_script}
 </body>
 
 </html>

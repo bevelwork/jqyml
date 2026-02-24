@@ -40,6 +40,7 @@
             <h1><a href="/" style="text-decoration: none; color: inherit;">jqyml</a></h1>
             <a href="/rule110">Rule 110</a>
             <a href="/fizzbuzz">FizzBuzz</a>
+            <a href="/doom">Doom</a>
             <a href="/built_with">Built with</a>
         </div>
         <div class="counter-box">Visitor count: <span id="count" class="count">{counter_html}</span></div>
