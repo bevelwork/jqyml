@@ -130,7 +130,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq given level + player state outputs a list of line segments (or draw commands) with expected count/bounds; player marker present. Snapshot for fixed camera/position. Run in CI or `make test`.
 - **Reference:** `am_map.c` (automap); we’re not doing BSP yet, just raw linedefs.
 - **Deliverable:** See E1M1 outline and player position from above; player doesn’t move yet.
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** `game.jq` outputs `frame.map` with `lines` and `player`; client projects and draws lines + player triangle.
 
 ### 4.1 — First-person “wireframe” or minimal 3D
 - **Goal:** First-person view: only walls (no textures), e.g. wireframe or flat-shaded segments.
@@ -141,7 +142,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq for fixed player (x, y, angle) and level outputs segment list (non-empty, bounded by screen); changing angle changes segment order or set. Snapshot for one or two view angles. Run in CI or `make test`.
 - **Reference:** `r_main.c` (viewx, viewy, viewangle, projection); `r_bsp.c` (BSP walk); `r_segs.c` (R_StoreWallRange); `r_draw.c` (column drawing). For MVP we can do a single-angle projection and no ceiling/floor.
 - **Deliverable:** First-person view of E1M1 walls (wireframe or flat segments), no movement yet.
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** `frame.view3d` has `walls` (with floor/ceiling heights) and `player`; client projects and draws filled wall quads.
 
 ### 4.2 — BSP-based visibility (optional but recommended)
 - **Goal:** Correct back-to-front or BSP order so walls don’t overlap wrongly.
@@ -151,7 +153,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: BSP traversal order (e.g. subsector order) differs from non-BSP; known view position yields deterministic segment list; no duplicate or reversed segs. Snapshot for a few viewpoints. Run in CI or `make test`.
 - **Reference:** `r_bsp.c` (`R_RenderBSPNode`), `r_segs.c`; `mapnode_t` (NF_SUBSECTOR), `mapsubsector_t`, `mapseg_t`.
 - **Deliverable:** First-person view with correct occlusion for E1M1.
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** `level_walls_3d_bsp($level; $px; $py)` traverses BSP when nodes non-empty; else uses linedef order.
 
 ### 4.3 — Floors and ceilings (flat shading)
 - **Goal:** Draw sector floors and ceilings (single color per sector, no textures).
@@ -161,7 +164,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq output includes floor/ceiling spans or sector colors for visible subsectors; span bounds and light/color consistent with sector data. Snapshot for fixed view. Run in CI or `make test`.
 - **Reference:** `r_plane.c` (floors/ceilings); `sector_t` (floorheight, ceilingheight, lightlevel).
 - **Deliverable:** First-person view with solid floor and ceiling colors per sector.
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** `view3d.floorlight` / `ceilinglight` from sector 0; client draws ceiling then floor (by light) before walls.
 
 ---
 

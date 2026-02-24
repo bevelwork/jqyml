@@ -39,6 +39,28 @@ def validate_frame(obj: dict | None) -> bool:
             return False
         if "lines" not in menu or not isinstance(menu["lines"], list):
             return False
+    map_data = obj.get("map")
+    if map_data is not None:
+        if not isinstance(map_data, dict):
+            return False
+        if "lines" not in map_data or not isinstance(map_data["lines"], list):
+            return False
+        for seg in map_data["lines"]:
+            if not isinstance(seg, dict) or not all(k in seg for k in ("x1", "y1", "x2", "y2")):
+                return False
+        if "player" not in map_data or not isinstance(map_data["player"], dict):
+            return False
+        p = map_data["player"]
+        if not all(k in p for k in ("x", "y", "angle")):
+            return False
+    view3d = obj.get("view3d")
+    if view3d is not None:
+        if not isinstance(view3d, dict):
+            return False
+        if "walls" not in view3d or not isinstance(view3d["walls"], list):
+            return False
+        if "player" not in view3d or not isinstance(view3d["player"], dict):
+            return False
     return True
 
 

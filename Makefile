@@ -76,6 +76,7 @@ test-doom-jq-game-level:
 	out=$$(cd $(JQYML_DIR) && echo "$$payload" | jq -L doom_jq/jq -f doom_jq/jq/game.jq -c 2>/dev/null); ret=$$?; \
 	if [ $$ret -ne 0 ]; then echo "  FAILED game.jq level (jq exit $$ret)"; exit 1; fi; \
 	if ! echo "$$out" | jq -e '.state.mode == "game" and (.state.level | type == "object") and (.state.level.vertexes | length == 4) and .state.player.x == 128 and .state.player.y == 128 and .state.player.angle == 90 and .state.player.health == 100' >/dev/null 2>&1; then echo "  FAILED (level/player spawn assertion)"; echo "$$out" | jq .; exit 1; fi; \
+	if ! echo "$$out" | jq -e '.frame.map != null and (.frame.map.lines | length == 4) and .frame.map.player.x == 128 and .frame.map.player.y == 128 and .frame.map.player.angle == 90' >/dev/null 2>&1; then echo "  FAILED (Phase 4.0 map frame assertion)"; echo "$$out" | jq .; exit 1; fi; \
 	echo "  OK"
 test-doom-jq-runner:
 	@echo "Testing doom_jq runner.py (--headless, --loop --headless)..."; \

@@ -76,37 +76,122 @@ def menu_frame($next):
     null
   end;
 
-# ---------- Game (bouncing box from loop.jq) ----------
+# ---------- Game: level map (Phase 4.0) or bouncing box ----------
 def box_w: 40;
 def box_h: 20;
 
 def game_state: .state.game // { x: 140, y: 90, vx: 4, vy: 3 };
 
+# Level lines for top-down map: from linedefs + vertexes -> [{x1,y1,x2,y2}]
+def level_lines($level):
+  ($level.vertexes // []) as $v
+  | ($level.linedefs // [])
+  | map(
+      { x1: $v[.v1].x, y1: $v[.v1].y, x2: $v[.v2].x, y2: $v[.v2].y }
+    );
+
+# Walls for first-person (Phase 4.1): each wall has world segment + floor/ceiling heights from front sector
+def level_walls_3d($level):
+  ($level.vertexes // []) as $v
+  | ($level.linedefs // []) as $ld
+  | ($level.sidedefs // []) as $sd
+  | ($level.sectors // []) as $sec
+  | [ range(0; $ld | length) as $i
+      | $ld[$i] as $l
+      | ($l.sidenum[0] // -1) as $si
+      | if $si >= 0 then
+          $sec[$sd[$si].sector] as $s
+          | { x1: $v[$l.v1].x, y1: $v[$l.v1].y, x2: $v[$l.v2].x, y2: $v[$l.v2].y,
+              floorheight: ($s.floorheight // 0), ceilingheight: ($s.ceilingheight // 128) }
+        else
+          empty
+        end
+    ];
+
+# BSP (Phase 4.2): one wall from a seg (vertexes + linedef front sector)
+def _seg_wall($level; $seg):
+  ($level.vertexes // []) as $v
+  | ($level.linedefs // []) as $ld
+  | ($level.sidedefs // []) as $sd
+  | ($level.sectors // []) as $sec
+  | $ld[$seg.linedef] as $l
+  | ($l.sidenum[0] // -1) as $si
+  | (if $si >= 0 then $sec[$sd[$si].sector] else null end) as $s
+  | (if $s != null then { x1: $v[$seg.v1].x, y1: $v[$seg.v1].y, x2: $v[$seg.v2].x, y2: $v[$seg.v2].y, floorheight: ($s.floorheight // 0), ceilingheight: ($s.ceilingheight // 128) } else empty end);
+
+# NF_SUBSECTOR = 0x8000 (32768)
+def _bsp_walls($level; $px; $py; $child):
+  if $child >= 32768 then
+    ($child - 32768) as $ssi
+    | ($level.ssectors[$ssi] // { firstseg: 0, numsegs: 0 })
+    | range(0; .numsegs) as $j
+    | $level.segs[.firstseg + $j] as $seg
+    | _seg_wall($level; $seg)
+  else
+    ($level.nodes[$child] // null) as $n
+    | if $n == null then empty
+      else (($px - $n.x) * $n.dy - ($py - $n.y) * $n.dx) as $side
+      | (if $side > 0 then [$n.children[1], $n.children[0]] else [$n.children[0], $n.children[1]] end) as $order
+      | $order[0] as $c0 | $order[1] as $c1
+      | _bsp_walls($level; $px; $py; $c0), _bsp_walls($level; $px; $py; $c1)
+      end
+  end;
+
+def level_walls_3d_bsp($level; $px; $py):
+  if ($level.nodes | length) > 0 then
+    [ _bsp_walls($level; $px; $py; ($level.nodes | length - 1)) ]
+  else
+    level_walls_3d($level)
+  end;
+
 def game_tick:
   state as $st
-  | ($st.game // { x: 140, y: 90, vx: 4, vy: 3 }) as $g
-  | ($g.x + $g.vx) as $nx
-  | ($g.y + $g.vy) as $ny
-  | (if $nx < 0 or $nx > (screen_width - box_w) then -$g.vx else $g.vx end) as $vx2
-  | (if $ny < 0 or $ny > (screen_height - box_h) then -$g.vy else $g.vy end) as $vy2
-  | {
-      x: (if $nx < 0 then 0 elif $nx > (screen_width - box_w) then (screen_width - box_w) else $nx end),
-      y: (if $ny < 0 then 0 elif $ny > (screen_height - box_h) then (screen_height - box_h) else $ny end),
-      vx: $vx2,
-      vy: $vy2
-    } as $next_game
-  | $st | .game = $next_game;
+  | if $st.level != null then
+      # Phase 4: in-level; no movement yet (Phase 5)
+      $st
+    else
+      ($st.game // { x: 140, y: 90, vx: 4, vy: 3 }) as $g
+      | ($g.x + $g.vx) as $nx
+      | ($g.y + $g.vy) as $ny
+      | (if $nx < 0 or $nx > (screen_width - box_w) then -$g.vx else $g.vx end) as $vx2
+      | (if $ny < 0 or $ny > (screen_height - box_h) then -$g.vy else $g.vy end) as $vy2
+      | {
+          x: (if $nx < 0 then 0 elif $nx > (screen_width - box_w) then (screen_width - box_w) else $nx end),
+          y: (if $ny < 0 then 0 elif $ny > (screen_height - box_h) then (screen_height - box_h) else $ny end),
+          vx: $vx2,
+          vy: $vy2
+        } as $next_game
+      | $st | .game = $next_game
+    end;
 
 def game_frame($st):
-  $st.game as $g
-  | {
+  if ($st.level != null) and ($st.player != null) then
+    # Phase 4.0 map + 4.1 first-person view (world coords); client projects to screen
+    {
       width: screen_width,
       height: screen_height,
-      draw: [
-        { rect: [0, 0, screen_width, screen_height], color: "#1a1a2e" },
-        { rect: [($g.x | floor), ($g.y | floor), box_w, box_h], color: "#4a4a6a" }
-      ]
-    };
+      map: {
+        lines: level_lines($st.level),
+        player: { x: $st.player.x, y: $st.player.y, angle: $st.player.angle }
+      },
+      view3d: {
+        walls: level_walls_3d_bsp($st.level; $st.player.x; $st.player.y),
+        player: { x: $st.player.x, y: $st.player.y, angle: $st.player.angle },
+        floorlight: ($st.level.sectors[0].lightlevel // 160),
+        ceilinglight: ($st.level.sectors[0].lightlevel // 160)
+      }
+    }
+  else
+    ($st.game // { x: 140, y: 90, vx: 4, vy: 3 }) as $g
+    | {
+        width: screen_width,
+        height: screen_height,
+        draw: [
+          { rect: [0, 0, screen_width, screen_height], color: "#1a1a2e" },
+          { rect: [($g.x | floor), ($g.y | floor), box_w, box_h], color: "#4a4a6a" }
+        ]
+      }
+  end;
 
 # ---------- Dispatch ----------
 (if state.quit then

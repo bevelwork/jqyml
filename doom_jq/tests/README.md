@@ -25,6 +25,8 @@ make test-doom-jq-wad        # Phase 3.0: e1m1.json schema validation
 | **test-doom-jq-game-level** | With E1M1 in input.level and skill screen + Enter, game.jq outputs state with `mode: "game"`, `level` (vertexes, etc.), and `player` (x, y, angle, health) from thing type 1. |
 | **test-doom-jq-wad** | `doom_jq/data/e1m1.json` validates against schema (required keys, player thing type 1). |
 
+Phase 4 (rendering) is covered by the same game-level test: after Start, `frame.map` (top-down lines + player) and `frame.view3d` (first-person walls + player, floor/ceiling light) are present; runner validates `frame.map` and `frame.view3d`.
+
 ## Validation (as of 2026-02-24)
 
 - All four targets pass when implementation and expected files match.
