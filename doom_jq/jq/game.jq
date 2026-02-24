@@ -46,13 +46,19 @@ def menu_tick:
           (($m.items[$wrapped] | capture("E(?<e>[0-9]+)") | .e | tonumber) // 1) as $ep
           | $st | .menu = { screen: "skill", items: skill_items, selected: 2, episode: $ep }
         elif $m.screen == "skill" then
-          { mode: "game",
-            menu: null,
-            episode: ($st.menu.episode // 1),
-            map: 1,
-            skill: $st.menu.selected,
-            game: { x: 140, y: 90, vx: 4, vy: 3 }
-          }
+          ($st.menu.episode // 1) as $ep
+          | (if ($ep == 1) and (.input.level != null) then .input.level else null end) as $level_data
+          | (if $level_data != null then ($level_data.things // [] | map(select(.type == 1)) | .[0]) else null end) as $p1
+          | { mode: "game",
+              menu: null,
+              episode: $ep,
+              map: 1,
+              skill: $st.menu.selected,
+              game: { x: 140, y: 90, vx: 4, vy: 3 }
+            }
+          | (if $level_data != null then .level = $level_data else . end)
+          | (if $p1 != null then .player = { x: $p1.x, y: $p1.y, angle: $p1.angle, health: 100 } else . end)
+          | (if $level_data != null then .things = ($level_data.things // []) else . end)
         else
           $st | .menu.selected = $wrapped
         end

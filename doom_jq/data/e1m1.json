@@ -1,0 +1,161 @@
+{
+  "vertexes": [
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 256,
+      "y": 0
+    },
+    {
+      "x": 256,
+      "y": 256
+    },
+    {
+      "x": 0,
+      "y": 256
+    }
+  ],
+  "linedefs": [
+    {
+      "v1": 0,
+      "v2": 1,
+      "flags": 1,
+      "special": 0,
+      "tag": 0,
+      "sidenum": [
+        0,
+        -1
+      ]
+    },
+    {
+      "v1": 1,
+      "v2": 2,
+      "flags": 1,
+      "special": 0,
+      "tag": 0,
+      "sidenum": [
+        1,
+        -1
+      ]
+    },
+    {
+      "v1": 2,
+      "v2": 3,
+      "flags": 1,
+      "special": 0,
+      "tag": 0,
+      "sidenum": [
+        2,
+        -1
+      ]
+    },
+    {
+      "v1": 3,
+      "v2": 0,
+      "flags": 1,
+      "special": 0,
+      "tag": 0,
+      "sidenum": [
+        3,
+        -1
+      ]
+    }
+  ],
+  "sidedefs": [
+    {
+      "textureoffset": 0,
+      "rowoffset": 0,
+      "toptexture": "-",
+      "bottomtexture": "-",
+      "midtexture": "STARTAN1",
+      "sector": 0
+    },
+    {
+      "textureoffset": 0,
+      "rowoffset": 0,
+      "toptexture": "-",
+      "bottomtexture": "-",
+      "midtexture": "STARTAN1",
+      "sector": 0
+    },
+    {
+      "textureoffset": 0,
+      "rowoffset": 0,
+      "toptexture": "-",
+      "bottomtexture": "-",
+      "midtexture": "STARTAN1",
+      "sector": 0
+    },
+    {
+      "textureoffset": 0,
+      "rowoffset": 0,
+      "toptexture": "-",
+      "bottomtexture": "-",
+      "midtexture": "STARTAN1",
+      "sector": 0
+    }
+  ],
+  "sectors": [
+    {
+      "floorheight": 0,
+      "ceilingheight": 128,
+      "floorpic": "FLOOR0_1",
+      "ceilingpic": "CEIL3_2",
+      "lightlevel": 160,
+      "special": 0,
+      "tag": 0
+    }
+  ],
+  "things": [
+    {
+      "x": 128,
+      "y": 128,
+      "angle": 90,
+      "type": 1,
+      "options": 7
+    }
+  ],
+  "segs": [
+    {
+      "v1": 0,
+      "v2": 1,
+      "angle": 0,
+      "linedef": 0,
+      "side": 0,
+      "offset": 0
+    },
+    {
+      "v1": 1,
+      "v2": 2,
+      "angle": 16384,
+      "linedef": 1,
+      "side": 0,
+      "offset": 0
+    },
+    {
+      "v1": 2,
+      "v2": 3,
+      "angle": 32768,
+      "linedef": 2,
+      "side": 0,
+      "offset": 0
+    },
+    {
+      "v1": 3,
+      "v2": 0,
+      "angle": 49152,
+      "linedef": 3,
+      "side": 0,
+      "offset": 0
+    }
+  ],
+  "ssectors": [
+    {
+      "numsegs": 4,
+      "firstseg": 0
+    }
+  ],
+  "nodes": []
+}

@@ -209,6 +209,22 @@ FIZZBUZZ_JQX = JQ + [
 PARSE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "parse.jq")]
 DOOM_JQ_DIR = os.path.join(APP_ROOT, "doom_jq", "jq")
 DOOM_LOOP_JQ = JQ + ["-L", DOOM_JQ_DIR, "-f", os.path.join(DOOM_JQ_DIR, "game.jq")]
+_doom_level_cache = None
+
+
+def _doom_inject_level(payload_obj: dict) -> dict:
+    """Inject E1M1 level into payload input for game.jq (Phase 3.1). Mutates and returns payload_obj."""
+    global _doom_level_cache
+    if _doom_level_cache is None:
+        level_path = os.path.join(APP_ROOT, "doom_jq", "data", "e1m1.json")
+        try:
+            with open(level_path, encoding="utf-8") as f:
+                _doom_level_cache = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            _doom_level_cache = False
+    if _doom_level_cache:
+        payload_obj.setdefault("input", {})["level"] = _doom_level_cache
+    return payload_obj
 DOOM_JQX = JQ + [
     "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "doom.jqx"),
     "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "--rawfile", "footer", _EMPTY_JQX,
@@ -355,7 +371,9 @@ class Handler(BaseHTTPRequestHandler):
             if payload is None:
                 break
             try:
-                _ = json.loads(payload)
+                obj = json.loads(payload)
+                _doom_inject_level(obj)
+                payload = json.dumps(obj)
             except json.JSONDecodeError:
                 continue
             try:
@@ -825,10 +843,16 @@ class Handler(BaseHTTPRequestHandler):
         route = self.parse_route("POST", self.path, body)
         if route["action"] == "doom_tic":
             try:
-                payload = route.get("body", "{}").strip() or "{}"
+                payload_str = route.get("body", "{}").strip() or "{}"
+                try:
+                    payload_obj = json.loads(payload_str)
+                    _doom_inject_level(payload_obj)
+                    payload_str = json.dumps(payload_obj)
+                except json.JSONDecodeError:
+                    pass
                 r = subprocess.run(
                     DOOM_LOOP_JQ,
-                    input=payload,
+                    input=payload_str,
                     capture_output=True,
                     text=True,
                     timeout=2,

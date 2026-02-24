@@ -103,7 +103,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: WAD exporter on a known WAD (e.g. doom1.wad) produces JSON that validates against the schema; checksums or counts for vertexes/linedefs/sectors/things to detect accidental changes. Run in CI or `make test`.
 - **Reference:** `w_wad.c` / `w_wad.h` (lump names, `W_ReadLump`); `doomdata.h` (map lump order, structs); `p_setup.c` (`P_SetupLevel`, level loading).
 - **Deliverable:** `doom_jq/data/e1m1.json` (or similar) and a short schema doc.
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** `doom_jq/tools/wad2json.py` reads a WAD, finds map lumps (THINGS, LINEDEFS, …), parses binary structs, outputs JSON. `--write-minimal` writes a minimal E1M1 (one room, one player thing) to `doom_jq/data/e1m1.json`. `--validate <file>` checks schema. Schema doc: `doom_jq/data/SCHEMA.md`. Test: `make test-doom-jq-wad` validates e1m1.json. For a real E1M1 run: `python3 doom_jq/tools/wad2json.py path/to/doom1.wad > doom_jq/data/e1m1.json`.
 
 ### 3.1 — Level state in jq (load E1M1)
 - **Goal:** When starting a game from the menu, jq loads E1M1 into “level” state and sets player spawn.
@@ -114,7 +115,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq with injected E1M1 JSON and “start game” state yields state with `level` populated and `player.x`/`player.y`/`player.angle` from thing type 1; no level when mode is menu. Snapshot or schema assertions. Run in CI or `make test`.
 - **Reference:** `P_SetupLevel`, `playerstarts[]`, `mapthing_t`; `G_DoLoadLevel` / `G_InitNew`.
 - **Deliverable:** After “Start” from menu, state contains full E1M1 and player at correct spawn; Python can pass level to jq each time or jq embeds it once.
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** In `game.jq`, on transition from skill screen (Enter) with episode 1, we set `.level = .input.level`, `.player = { x, y, angle, health: 100 }` from thing type 1, `.things = level.things`. Level is passed via `input.level` (runner and server inject `doom_jq/data/e1m1.json`). Test: `make test-doom-jq-game-level` (skill + Enter with level in input → state has level and player 128,128,90).
 
 ---
 

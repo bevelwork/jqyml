@@ -69,6 +69,14 @@ test-doom-jq-game:
 	out=$$(cd $(JQYML_DIR) && echo '{"state":{"mode":"menu","menu":{"screen":"episode","items":["E1","E2","E3"],"selected":0}},"input":{"keys":["Enter"]}}' | jq -L doom_jq/jq -f doom_jq/jq/game.jq -c 2>/dev/null); \
 	if ! echo "$$out" | diff -q - doom_jq/tests/game_episode_skill.expected >/dev/null 2>&1; then echo "  FAILED (episode -> skill)"; echo "$$out" | diff - doom_jq/tests/game_episode_skill.expected || true; exit 1; fi; \
 	echo "  OK"
+test-doom-jq-game-level:
+	@echo "Testing doom_jq game.jq (Phase 3.1 level load, player spawn)..."; \
+	f='{state: {mode: "menu", menu: {screen: "skill", items: ["Baby","Easy","Normal","Hard","Nightmare"], selected: 2, episode: 1}}, input: {keys: ["Enter"], level: $$level[0]}}'; \
+	payload=$$(cd $(JQYML_DIR) && jq -n -c --slurpfile level doom_jq/data/e1m1.json "$$f"); \
+	out=$$(cd $(JQYML_DIR) && echo "$$payload" | jq -L doom_jq/jq -f doom_jq/jq/game.jq -c 2>/dev/null); ret=$$?; \
+	if [ $$ret -ne 0 ]; then echo "  FAILED game.jq level (jq exit $$ret)"; exit 1; fi; \
+	if ! echo "$$out" | jq -e '.state.mode == "game" and (.state.level | type == "object") and (.state.level.vertexes | length == 4) and .state.player.x == 128 and .state.player.y == 128 and .state.player.angle == 90 and .state.player.health == 100' >/dev/null 2>&1; then echo "  FAILED (level/player spawn assertion)"; echo "$$out" | jq .; exit 1; fi; \
+	echo "  OK"
 test-doom-jq-runner:
 	@echo "Testing doom_jq runner.py (--headless, --loop --headless)..."; \
 	cd $(JQYML_DIR) && python3 doom_jq/runner.py --headless 2>/dev/null; ret1=$$?; \
@@ -76,7 +84,14 @@ test-doom-jq-runner:
 	if [ $$ret1 -ne 0 ]; then echo "  FAILED runner --headless (exit $$ret1)"; exit 1; fi; \
 	if [ $$ret2 -ne 0 ]; then echo "  FAILED runner --loop --headless (exit $$ret2)"; exit 1; fi; \
 	echo "  OK"
-test-doom-jq: test-doom-jq-frame test-doom-jq-loop test-doom-jq-game test-doom-jq-runner
+# Phase 3.0: E1M1 JSON schema and WAD export
+test-doom-jq-wad:
+	@echo "Testing doom_jq E1M1 data (schema validation)..."; \
+	python3 $(DOOM_JQ_DIR)/tools/wad2json.py --validate $(DOOM_JQ_DIR)/data/e1m1.json 2>/dev/null; ret=$$?; \
+	if [ $$ret -ne 0 ]; then echo "  FAILED (e1m1.json schema)"; exit 1; fi; \
+	echo "  OK"
+
+test-doom-jq: test-doom-jq-frame test-doom-jq-loop test-doom-jq-game test-doom-jq-game-level test-doom-jq-runner test-doom-jq-wad
 	@echo "All doom_jq tests passed."
 
 # Run YAML parser and jqx tests.

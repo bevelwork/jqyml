@@ -83,8 +83,16 @@ def main() -> int:
     jq_dir = base / "jq"
 
     if args.loop:
-        # One tic: pass {"state": null, "input": {"keys": []}} to game.jq (menu + game)
-        payload = {"state": None, "input": {"keys": []}}
+        # One tic: pass state + input; include level for E1M1 so menu→game can load it (Phase 3.1)
+        level_path = base / "data" / "e1m1.json"
+        level_data = None
+        if level_path.is_file():
+            with open(level_path) as f:
+                level_data = json.load(f)
+        payload = {
+            "state": None,
+            "input": {"keys": [], **({"level": level_data} if level_data is not None else {})},
+        }
         out = run_jq(jq_dir / "game.jq", jq_dir, stdin_str=json.dumps(payload))
         data = json.loads(out)
         if "state" not in data:
