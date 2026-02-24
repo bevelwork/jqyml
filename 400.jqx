@@ -2,7 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1117">
   <title>{status} Bad Request</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #e6edf3; background: #0d1117; }
+    h1 { font-size: 1.5rem; }
+    p { color: #8b949e; }
+    a { color: #58a6ff; text-decoration: underline; }
+    a:hover { color: #79b8ff; }
+  </style>
 </head>
 <body>
   <h1>Error response</h1>
