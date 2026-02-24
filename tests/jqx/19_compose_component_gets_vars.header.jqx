@@ -1,0 +1,1 @@
+<header>Title: {title}<If show_count> ({count})</If></header>

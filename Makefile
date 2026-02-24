@@ -62,16 +62,19 @@ test: test-jqx test-state test-anchors test-speed test-server
 	done; \
 	[ $$failed -eq 0 ] && echo "All tests passed." || { echo "$$failed test(s) failed."; exit 1; }
 
-# Run jqx tests: each tests/jqx/*.jqx (except *.header.jqx) has matching .json and .expected
-JQX_TESTS := $(filter-out %.header,$(patsubst tests/jqx/%.jqx,%,$(wildcard tests/jqx/*.jqx)))
+# Run jqx tests: each tests/jqx/*.jqx (except *.header.jqx, *.head.jqx, *.footer.jqx) has matching .json and .expected.
+# Optional composition: .header.jqx -> <Header />, .head.jqx -> <Head />, .footer.jqx -> <Footer /> (all paths under tests/jqx/).
+EMPTY_JQX := $(JQYML_DIR)/empty.jqx
+JQX_TESTS := $(filter-out %.header %.head %.footer,$(patsubst tests/jqx/%.jqx,%,$(wildcard tests/jqx/*.jqx)))
 test-jqx:
 	@failed=0; \
 	for name in $(JQX_TESTS); do \
 	  echo "Testing jqx $$name..."; \
 	  out=$$(mktemp); \
-	  hdr=empty.jqx; [ -f "tests/jqx/$$name.header.jqx" ] && hdr="tests/jqx/$$name.header.jqx"; \
-	  headf=empty.jqx; [ -f "tests/jqx/$$name.head.jqx" ] && headf="tests/jqx/$$name.head.jqx"; \
-	  (cat "tests/jqx/$$name.json" | jq -r --rawfile tmpl "tests/jqx/$$name.jqx" --rawfile header "$$hdr" --rawfile head "$$headf" -L . -f jqx.jq > "$$out" 2>&1); ret=$$?; \
+	  hdr="$(EMPTY_JQX)"; [ -f "tests/jqx/$$name.header.jqx" ] && hdr="$(JQYML_DIR)/tests/jqx/$$name.header.jqx"; \
+	  headf="$(EMPTY_JQX)"; [ -f "tests/jqx/$$name.head.jqx" ] && headf="$(JQYML_DIR)/tests/jqx/$$name.head.jqx"; \
+	  footf="$(EMPTY_JQX)"; [ -f "tests/jqx/$$name.footer.jqx" ] && footf="$(JQYML_DIR)/tests/jqx/$$name.footer.jqx"; \
+	  (cat "tests/jqx/$$name.json" | jq -r --rawfile tmpl "tests/jqx/$$name.jqx" --rawfile header "$$hdr" --rawfile head "$$headf" --rawfile footer "$$footf" -L . -f jqx.jq > "$$out" 2>&1); ret=$$?; \
 	  if [ $$ret -ne 0 ]; then echo "  FAILED (jq exit $$ret)"; failed=$$((failed+1)); rm -f "$$out"; continue; fi; \
 	  if ! diff -q "tests/jqx/$$name.expected" "$$out" >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; diff "tests/jqx/$$name.expected" "$$out" || true; failed=$$((failed+1)); fi; \
 	  rm -f "$$out"; \

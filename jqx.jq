@@ -40,15 +40,20 @@ def expand_one_if($vars):
           | ($match_end + 5) as $after_start
           | $t[$after_start:] as $after
           | (if $vars[$m.name] then $content else "" end) as $replacement
-          | $t[:$start] + $replacement + $after
+          | ($t[:$start] + $replacement + $after) as $result
+          | (if (($result | length) == 0 or $result == null) and (($t | length) > 0) then $t else ($result // $t) end)
           end
         end
       end
     end;
 
 def expand_if($vars):
-  expand_one_if($vars) as $next
-  | if $next == . then . else $next | expand_if($vars) end;
+  (. // "") as $start
+  | reduce range(0; 100) as $_ ($start;
+      . as $cur
+      | ($cur | expand_one_if($vars)) as $n
+      | if $n == $cur then $cur else $n end
+    );
 
 # Expand the first <For var key>content</For> block; return expanded string or original if none.
 def expand_one_for($vars):
@@ -75,8 +80,12 @@ def expand_one_for($vars):
 
 # Expand all <For> blocks (repeat until no change).
 def expand_for($vars):
-  expand_one_for($vars) as $next
-  | if $next == . then . else $next | expand_for($vars) end;
+  (. // "") as $start
+  | reduce range(0; 100) as $_ ($start;
+      . as $cur
+      | ($cur | expand_one_for($vars)) as $n
+      | if $n == $cur then $cur else $n end
+    );
 
 def substitute_vars($vars):
   (. // "") | reduce ([scan("\\{[a-zA-Z0-9_]+\\}")] | unique[]) as $ph (
@@ -93,24 +102,28 @@ def escape_replacement:
   gsub("\\\\"; "\\\\\\\\") | gsub("&"; "\\\\&");
 
 # Find first <Name /> or <Name/> in $t; return {pos, len, name} or null.
-# Only match when the tag is at a word boundary (start, newline, or space before "<") so we never match
-# a substring (e.g. "der />" inside "<Header />"). Require / before >. Compute len from the template.
+# Only match when the tag is at line start. Return pos = start of entire match (including leading
+# newline/spaces) and len = full match length so we replace the whole span and never leave "<h" or "ead />".
 def _first_component_tag($t; $components):
   ($components | keys) as $names
   | [ $names[] as $name
+      | (($name | length) + 4) as $tag_len
       | ($t | index("  <" + $name + " />")) as $p0
+      | (if $p0 != null and (($p0 == 0) or ($p0 > 0 and $t[$p0 - 1:$p0] == "\n")) then { pos: $p0, len: (2 + $tag_len) } else null end) as $m0
       | ($t | index("\n  <" + $name + " />")) as $pn
+      | (if $pn != null then { pos: $pn, len: (3 + $tag_len) } else null end) as $mn
+      | ($t | index("\n    <" + $name + " />")) as $pn4
+      | (if $pn4 != null then { pos: $pn4, len: (5 + $tag_len) } else null end) as $m4
       | ($t | index("<" + $name + " />")) as $p1
+      | (if $p1 != null then
+          (if $p1 > 0 and $t[$p1 - 1:$p1] == " " then { pos: ($p1 - 1), len: (1 + $tag_len) }
+           else { pos: $p1, len: $tag_len } end) else null end) as $m1
       | ($t | index("<" + $name + "/>")) as $p2
-      | (if $p0 != null then $p0 + 2
-        elif $pn != null then $pn + 3
-        elif $p1 != null and ($p2 == null or $p1 <= $p2) then $p1
-        elif $p2 != null then $p2
-        else null end) as $pos
-      | if $pos != null then
-          (($name | length) + 4) as $len
-        | { pos: $pos, len: $len, name: $name }
-        else null end ]
+      | (if $p2 != null then
+          (if $p2 > 0 and $t[$p2 - 1:$p2] == " " then { pos: ($p2 - 1), len: (1 + $tag_len) }
+           else { pos: $p2, len: $tag_len } end) else null end) as $m2
+      | ($m0 // $mn // $m4 // $m1 // $m2) as $m
+      | if $m != null then $m + { name: $name } else null end ]
   | map(select(. != null))
   | if length == 0 then null else min_by(.pos) end;
 
@@ -123,16 +136,24 @@ def expand_one_include($vars; $components):
     | $t[0:$m.pos] + $repl + $t[$m.pos + $m.len:]
     end;
 
+# Iterative expansion to avoid recursion depth limits with large templates
 def expand_includes($vars; $components):
-  (. // "") | if ($components | keys | length) == 0 then .
-  else expand_one_include($vars; $components) as $next
-  | if $next == . then . else $next | expand_includes($vars; $components) end
-  end;
+  (. // "") as $start
+  | if ($components | keys | length) == 0 then $start
+    else
+      reduce range(0; 20) as $_ ($start;
+        . as $cur
+        | ($cur | expand_one_include($vars; $components)) as $n
+        | if $n == $cur then $cur else $n end
+      )
+    end;
 
-# Build components map from rawfiles ($header -> "Header", $head -> "Head"). Pass empty.jqx when no components needed.
+# Build components map from rawfiles ($header -> "Header", $head -> "Head", $footer -> "Footer"). Pass empty.jqx when no components needed.
+# $footer is optional (omit --rawfile footer for pre-Footer callers).
 def components_from_rawfiles:
-  (if ($header | length) > 0 then { "Header": $header } else {} end)
-  + (if ($head | length) > 0 then { "Head": $head } else {} end);
+  (if (($header // "") | length) > 0 then { "Header": $header } else {} end)
+  + (if (($head // "") | length) > 0 then { "Head": $head } else {} end)
+  + (if (($footer // "") | length) > 0 then { "Footer": $footer } else {} end);
 
 . as $vars
 | components_from_rawfiles as $components
@@ -141,4 +162,4 @@ def components_from_rawfiles:
 | ($s1 | expand_if($vars)) as $s2
 | ($s2 | expand_for($vars)) as $s3
 | ($s3 | substitute_vars($vars)) as $s4
-| (if $s4 != null and ($s4 | length) > 0 then $s4 elif $s1 != null then $s1 else "FALLBACK" end)
+| (if $s4 != null and ($s4 | length) > 0 then $s4 elif $s1 != null and ($s1 | length) > 0 then $s1 else "" end)

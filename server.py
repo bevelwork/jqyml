@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Minimal HTTP server: routes from parse.jq; GET / -> index.jq, POST / -> run.jq (YAML->JSON), POST /state -> state.jq."""
+import html as html_module
 import json
 import logging
 import os
 import subprocess
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlparse
 
 import yaml
 
@@ -82,8 +83,7 @@ def _sitemap_xml() -> str:
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         f'  <url><loc>{SITE_URL}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n'
-        f'  <url><loc>{
-            SITE_URL}/old</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>\n'
+        f'  <url><loc>{SITE_URL}/old</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>\n'
         '</urlset>\n'
     )
 
@@ -99,28 +99,41 @@ JQ_BASE = ["jq", "-L", "/app"]
 JQ = _jq_cmd(JQ_BASE)
 RUN_JQ = JQ + ["-R", "-s", "-f", os.path.join(APP_ROOT, "run.jq")]
 INDEX_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index.jq")]
+_EMPTY_JQX = os.path.join(APP_ROOT, "empty.jqx")
 INDEX_JQX = JQ + [
     "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "index.jqx"),
     "--rawfile", "header", os.path.join(APP_ROOT, "header.jqx"),
     "--rawfile", "head", os.path.join(APP_ROOT, "head.jqx"),
+    "--rawfile", "footer", _EMPTY_JQX,
     "-f", os.path.join(APP_ROOT, "jqx.jq"),
 ]
 INDEX_OLD_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "index_old.jq")]
 STATE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "state.jq")]
-_EMPTY_JQX = os.path.join(APP_ROOT, "empty.jqx")
 NOT_FOUND_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "404.jqx"), "--rawfile",
-                     "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+                     "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "--rawfile", "footer", _EMPTY_JQX,
+                     "-f", os.path.join(APP_ROOT, "jqx.jq")]
 BAD_REQUEST_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(
-    APP_ROOT, "400.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+    APP_ROOT, "400.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "--rawfile", "footer", _EMPTY_JQX,
+    "-f", os.path.join(APP_ROOT, "jqx.jq")]
 UNAUTHORIZED_JQ = JQ + ["-r", "--rawfile", "tmpl", os.path.join(
-    APP_ROOT, "401.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "-f", os.path.join(APP_ROOT, "jqx.jq")]
+    APP_ROOT, "401.jqx"), "--rawfile", "header", _EMPTY_JQX, "--rawfile", "head", _EMPTY_JQX, "--rawfile", "footer", _EMPTY_JQX,
+    "-f", os.path.join(APP_ROOT, "jqx.jq")]
 BUILT_WITH_JQX = JQ + [
     "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "built_with.jqx"),
-    "--rawfile", "header", _EMPTY_JQX,
-    "--rawfile", "head", _EMPTY_JQX,
+    "--rawfile", "header", os.path.join(APP_ROOT, "header.jqx"),
+    "--rawfile", "head", os.path.join(APP_ROOT, "head.jqx"),
+    "--rawfile", "footer", _EMPTY_JQX,
     "-f", os.path.join(APP_ROOT, "jqx.jq"),
 ]
 BUILT_WITH_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "built_with.jq")]
+RULE110_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "rule110.jq")]
+RULE110_JQX = JQ + [
+    "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "rule110.jqx"),
+    "--rawfile", "header", _EMPTY_JQX,
+    "--rawfile", "head", _EMPTY_JQX,
+    "--rawfile", "footer", _EMPTY_JQX,
+    "-f", os.path.join(APP_ROOT, "jqx.jq"),
+]
 PARSE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "parse.jq")]
 
 
@@ -133,6 +146,8 @@ def parse_route(method: str, path: str, body: str) -> dict:
         return {"action": "index_old"}
     if method == "GET" and p == "/built_with":
         return {"action": "built_with"}
+    if method == "GET" and p == "/rule110":
+        return {"action": "rule110"}
     if method == "GET" and p == "/admin":
         return {"action": "unauthorized"}
     if method == "GET" and p == "/state":
@@ -336,6 +351,70 @@ class Handler(BaseHTTPRequestHandler):
                         out, status = "built_with.jqx produced empty output", 500
             except Exception as e:
                 logger.exception("built_with render failed")
+                out, status = str(e), 500
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(out.encode("utf-8"))
+        elif route["action"] == "rule110":
+            try:
+                state = self._get_current_state()
+                count = state.get("counter", 0)
+                query = parse_qs(urlparse(self.path).query)
+                raw_gen = (query.get("generations") or [None])[0]
+                try:
+                    n = max(1, min(500, int(raw_gen))) if raw_gen is not None else None
+                except (TypeError, ValueError):
+                    n = None
+                rule110_out = ""
+                generations_used = None
+                if n is not None:
+                    cmd = JQ + [
+                        "-n", "-r", "--argjson", "generations", str(n),
+                        "-f", os.path.join(APP_ROOT, "rule110.jq"),
+                    ]
+                    r = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        cwd=APP_ROOT,
+                    )
+                    _log_jq_stderr(r.stderr or "")
+                    if r.returncode == 0 and r.stdout:
+                        rule110_out = r.stdout
+                        generations_used = n
+                # Pre-render counter and output block so the template needs only substitute_vars (no <If>)
+                counter_html = "No visitors" if count == 0 else str(count)
+                output_block = ""
+                if rule110_out:
+                    escaped = html_module.escape(rule110_out)
+                    output_block = f'<h2>Output</h2>\n    <pre><code>{escaped}</code></pre>\n    '
+                rule110_vars = {
+                    "count": count,
+                    "count_is_zero": count == 0,
+                    "count_gt_0": count > 0,
+                    "generations": generations_used,
+                    "generations_display": str(generations_used) if generations_used is not None else "",
+                    "output": html_module.escape(rule110_out) if rule110_out else "",
+                    "has_output": bool(rule110_out),
+                    "content": str(generations_used) if generations_used is not None else "",
+                    "counter_html": counter_html,
+                    "output_block": output_block,
+                }
+                r = subprocess.run(
+                    RULE110_JQX,
+                    input=json.dumps(rule110_vars),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=APP_ROOT,
+                )
+                _log_jq_stderr(r.stderr or "")
+                out = r.stdout if r.returncode == 0 else r.stderr or "error"
+                status = 200 if r.returncode == 0 else 500
+            except Exception as e:
+                logger.exception("rule110 failed")
                 out, status = str(e), 500
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")

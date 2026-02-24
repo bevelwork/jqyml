@@ -12,6 +12,8 @@ include "log";
     { action: "index_old" }
   elif $method == "GET" and $path == "/built_with" then
     { action: "built_with" }
+  elif $method == "GET" and ($path == "/rule110" or ($path | startswith("/rule110?"))) then
+    { action: "rule110" }
   elif $method == "GET" and $path == "/admin" then
     { action: "unauthorized" }
   elif $method == "GET" and $path == "/state" then
