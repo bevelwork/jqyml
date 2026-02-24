@@ -1,4 +1,4 @@
-.PHONY: run test test-jqx test-state test-anchors test-server test-speed test-doom-jq test-doom-jq-frame test-doom-jq-loop test-doom-jq-runner speed up send docker-up docker-down docker-send
+.PHONY: run test test-jqx test-state test-anchors test-server test-speed test-doom-jq test-doom-jq-frame test-doom-jq-loop test-doom-jq-game test-doom-jq-runner speed up send docker-up docker-down docker-send
 
 JQYML_DIR := $(CURDIR)
 PORT := 8888
@@ -59,6 +59,16 @@ test-doom-jq-loop:
 	if [ $$ret -ne 0 ]; then echo "  FAILED (jq exit $$ret)"; exit 1; fi; \
 	if ! echo "$$out" | diff -q - doom_jq/tests/loop_one_tic.expected >/dev/null 2>&1; then echo "  FAILED (output mismatch)"; echo "$$out" | diff - doom_jq/tests/loop_one_tic.expected || true; exit 1; fi; \
 	echo "  OK"
+test-doom-jq-game:
+	@echo "Testing doom_jq game.jq (Phase 2 menu)..."; \
+	out=$$(cd $(JQYML_DIR) && echo '{"state":null,"input":{"keys":[]}}' | jq -L doom_jq/jq -f doom_jq/jq/game.jq -c 2>/dev/null); ret=$$?; \
+	if [ $$ret -ne 0 ]; then echo "  FAILED game.jq initial (jq exit $$ret)"; exit 1; fi; \
+	if ! echo "$$out" | diff -q - doom_jq/tests/game_menu_initial.expected >/dev/null 2>&1; then echo "  FAILED (initial menu mismatch)"; echo "$$out" | diff - doom_jq/tests/game_menu_initial.expected || true; exit 1; fi; \
+	out=$$(cd $(JQYML_DIR) && echo '{"state":{"mode":"menu","menu":{"screen":"main","items":["New Game","Options","Read This","Quit DOOM"],"selected":0}},"input":{"keys":["Enter"]}}' | jq -L doom_jq/jq -f doom_jq/jq/game.jq -c 2>/dev/null); \
+	if ! echo "$$out" | diff -q - doom_jq/tests/game_newgame_episode.expected >/dev/null 2>&1; then echo "  FAILED (New Game -> episode)"; echo "$$out" | diff - doom_jq/tests/game_newgame_episode.expected || true; exit 1; fi; \
+	out=$$(cd $(JQYML_DIR) && echo '{"state":{"mode":"menu","menu":{"screen":"episode","items":["E1","E2","E3"],"selected":0}},"input":{"keys":["Enter"]}}' | jq -L doom_jq/jq -f doom_jq/jq/game.jq -c 2>/dev/null); \
+	if ! echo "$$out" | diff -q - doom_jq/tests/game_episode_skill.expected >/dev/null 2>&1; then echo "  FAILED (episode -> skill)"; echo "$$out" | diff - doom_jq/tests/game_episode_skill.expected || true; exit 1; fi; \
+	echo "  OK"
 test-doom-jq-runner:
 	@echo "Testing doom_jq runner.py (--headless, --loop --headless)..."; \
 	cd $(JQYML_DIR) && python3 doom_jq/runner.py --headless 2>/dev/null; ret1=$$?; \
@@ -66,7 +76,7 @@ test-doom-jq-runner:
 	if [ $$ret1 -ne 0 ]; then echo "  FAILED runner --headless (exit $$ret1)"; exit 1; fi; \
 	if [ $$ret2 -ne 0 ]; then echo "  FAILED runner --loop --headless (exit $$ret2)"; exit 1; fi; \
 	echo "  OK"
-test-doom-jq: test-doom-jq-frame test-doom-jq-loop test-doom-jq-runner
+test-doom-jq: test-doom-jq-frame test-doom-jq-loop test-doom-jq-game test-doom-jq-runner
 	@echo "All doom_jq tests passed."
 
 # Run YAML parser and jqx tests.

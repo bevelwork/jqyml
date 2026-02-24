@@ -11,8 +11,10 @@ import sys
 from pathlib import Path
 
 
-# Frame schema: { "width": int, "height": int, "draw": [ {"rect": [x,y,w,h], "color": "#rrggbb"}, ... ] }
-def validate_frame(obj: dict) -> bool:
+# Frame schema: { "width": int, "height": int, "draw": [...] } or { "width", "height", "menu": { "lines": [], "selected": n } }; or null (e.g. on quit)
+def validate_frame(obj: dict | None) -> bool:
+    if obj is None:
+        return True
     if not isinstance(obj, dict):
         return False
     if obj.get("width") is None or obj.get("height") is None:
@@ -31,6 +33,12 @@ def validate_frame(obj: dict) -> bool:
             r = item["rect"]
             if not (isinstance(r, list) and len(r) == 4):
                 return False
+    menu = obj.get("menu")
+    if menu is not None:
+        if not isinstance(menu, dict):
+            return False
+        if "lines" not in menu or not isinstance(menu["lines"], list):
+            return False
     return True
 
 
@@ -75,15 +83,15 @@ def main() -> int:
     jq_dir = base / "jq"
 
     if args.loop:
-        # One tic: pass {"state": null, "input": {"keys": []}} to loop.jq
+        # One tic: pass {"state": null, "input": {"keys": []}} to game.jq (menu + game)
         payload = {"state": None, "input": {"keys": []}}
-        out = run_jq(jq_dir / "loop.jq", jq_dir, stdin_str=json.dumps(payload))
+        out = run_jq(jq_dir / "game.jq", jq_dir, stdin_str=json.dumps(payload))
         data = json.loads(out)
-        if "state" not in data or "frame" not in data:
-            print("loop.jq must output { state, frame }", file=sys.stderr)
+        if "state" not in data:
+            print("game.jq must output { state, frame }", file=sys.stderr)
             return 1
-        if not validate_frame(data["frame"]):
-            print("Invalid frame from loop.jq", file=sys.stderr)
+        if not validate_frame(data.get("frame")):
+            print("Invalid frame from game.jq", file=sys.stderr)
             return 1
         if args.headless:
             return 0

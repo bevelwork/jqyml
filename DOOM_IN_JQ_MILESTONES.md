@@ -26,6 +26,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: e.g. jq script given no input yields valid frame JSON (schema check or snapshot); runner exits 0 when given that frame. Run in CI or `make test` to protect against regressions.
 - **Reference:** `v_video.c` / `i_video.c` (screen buffer, dimensions); `doomdef.h` (`SCREENWIDTH` 320, `SCREENHEIGHT` 200).
 - **Deliverable:** Run `python doom_jq/runner.py` (or similar) and see one static image from jq.
+- **Status:** Done.
+- **Notes:** Frame schema is `{ "width": 320, "height": 200, "draw": [ {"rect": [x,y,w,h], "color": "#rrggbb"}, ... ] }`. Implemented in `doom_jq/jq/frame.jq`; `doom_jq/runner.py` runs jq, validates frame, exits 0. Snapshot test: `doom_jq/tests/frame_static.expected`; `make test-doom-jq-frame`. The site serves `/doom` (HTML + canvas) and uses the same frame format over WebSocket `/doom/ws` or POST `/doom/tic`.
 
 ### 1.1 — Simple game loop and display (e.g. bouncing box)
 - **Goal:** A ticking game loop where jq receives state + input and returns next state + frame.
@@ -36,6 +38,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: e.g. jq given initial state + empty input yields next state + frame; N tics from fixed initial state produce known final state (snapshot or golden file). Runner test: one full tic round-trip. Run in CI or `make test`.
 - **Reference:** `D_DoomLoop`, `TryRunTics`, `G_Ticker`, `D_Display`; fixed timestep idea from `d_main.c`.
 - **Deliverable:** A box that moves and bounces, driven entirely by jq state updates.
+- **Status:** Done.
+- **Notes:** `doom_jq/jq/loop.jq` implements one tic: input `{ "state", "input": { "keys": [] } }` → output `{ "state", "frame" }` (bouncing box). Runner supports `--loop --headless`. Snapshot: `doom_jq/tests/loop_one_tic.expected`; `make test-doom-jq-loop`, `make test-doom-jq-runner`. Web client sends state+keys over WebSocket and draws returned frame each tick.
 
 ### 1.2 — Input handling and schema
 - **Goal:** Python captures key events and passes them into jq; jq can branch on “menu” vs “game” at a high level.
@@ -45,6 +49,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq state transitions for key sequences (e.g. Up/Down changes `selected`, Enter toggles `mode`); snapshot or assertion on output state. Run in CI or `make test`.
 - **Reference:** `D_ProcessEvents`, `M_Responder`, `G_Responder`; `d_event.h` event types.
 - **Deliverable:** Keys change something visible (e.g. a counter or the box direction) and mode can be switched.
+- **Status:** Done.
+- **Notes:** Input schema `{ "keys": ["Up","Down","Left","Right", ... ] }` is used in `loop.jq` and by the runner/web client. Arrow keys and WASD mapped in `doom.jqx` script and in runner (keyboard only). Explicit `mode` (menu/game) is left for Phase 2 when menu state is added.
 
 ---
 
@@ -59,6 +65,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq menu state for sequences (Up/Down/Enter) — e.g. selected index wraps, Enter on “Quit DOOM” sets quit flag; frame contains expected items and cursor. Snapshot or golden output for a short key sequence. Run in CI or `make test`.
 - **Reference:** `m_menu.c` — `menu_t`, `menuitem_t`, `currentMenu`, `itemOn`; main menu items and `M_NewGame`, `M_QuitDOOM`, etc.
 - **Deliverable:** Navigate main menu (up/down, enter) and see selection change; Quit exits.
+- **Status:** Done.
+- **Notes:** Menu state and items in `doom_jq/jq/menu.jq` and `doom_jq/jq/game.jq`: main items New Game, Options, Read This, Quit DOOM. Up/Down wrap selection; Enter on New Game goes to episode screen. Frame has `menu: { lines, selected }` for client to draw. Web client draws menu with `>>` cursor; Quit sets `state.quit` and client stops tick loop. Snapshot tests: `game_menu_initial.expected`, `make test-doom-jq-game`.
 
 ### 2.1 — Episode and skill selection (New Game path)
 - **Goal:** New Game → Episode → Skill → “Start game” (to first level).
@@ -69,6 +77,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq flow New Game → E1 → Skill → Start yields state with `mode: "game"`, `episode: 1`, `map: 1`, and chosen skill; episode/skill screens show correct items and selection. Snapshot tests for full path. Run in CI or `make test`.
 - **Reference:** `M_NewGame` → `M_Episode` → `M_ChooseSkill` → `M_StartGame`; `startepisode`, `startmap`, `startskill` in `d_main.c`.
 - **Deliverable:** From main menu, choose New Game → E1 → Skill → Start; Python switches to “game” mode with episode 1, map 1.
+- **Status:** Done.
+- **Notes:** Episode screen (E1–E3) and skill screen (Baby, Easy, Normal, Hard, Nightmare) in `game.jq`. Enter on episode selects episode and goes to skill; Enter on skill sets `mode: "game"`, `episode`, `map: 1`, `skill` (index), and initial `game` state (bouncing box). First game frame is emitted on transition. Snapshots: `game_newgame_episode.expected`, `game_episode_skill.expected`; `make test-doom-jq-game`.
 
 ### 2.2 — Menu drawing (optional: patches / look and feel)
 - **Goal:** Menu looks more like Doom (optional: use patch names or simple graphics instead of plain text).
@@ -79,6 +89,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq frame output for main (and episode/skill) menus has expected draw commands or layout fields; regression tests for cursor position and item list. Run in CI or `make test`.
 - **Reference:** `M_Drawer`, `V_DrawPatch`; `M_DrawMainMenu`-style layout in `m_menu.c`.
 - **Deliverable:** Main menu (and optionally episode/skill) with recognizable Doom-like layout; no website, all local.
+- **Status:** Not started.
 
 ---
 
@@ -92,6 +103,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: WAD exporter on a known WAD (e.g. doom1.wad) produces JSON that validates against the schema; checksums or counts for vertexes/linedefs/sectors/things to detect accidental changes. Run in CI or `make test`.
 - **Reference:** `w_wad.c` / `w_wad.h` (lump names, `W_ReadLump`); `doomdata.h` (map lump order, structs); `p_setup.c` (`P_SetupLevel`, level loading).
 - **Deliverable:** `doom_jq/data/e1m1.json` (or similar) and a short schema doc.
+- **Status:** Not started.
 
 ### 3.1 — Level state in jq (load E1M1)
 - **Goal:** When starting a game from the menu, jq loads E1M1 into “level” state and sets player spawn.
@@ -102,6 +114,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq with injected E1M1 JSON and “start game” state yields state with `level` populated and `player.x`/`player.y`/`player.angle` from thing type 1; no level when mode is menu. Snapshot or schema assertions. Run in CI or `make test`.
 - **Reference:** `P_SetupLevel`, `playerstarts[]`, `mapthing_t`; `G_DoLoadLevel` / `G_InitNew`.
 - **Deliverable:** After “Start” from menu, state contains full E1M1 and player at correct spawn; Python can pass level to jq each time or jq embeds it once.
+- **Status:** Not started.
 
 ---
 
@@ -115,6 +128,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq given level + player state outputs a list of line segments (or draw commands) with expected count/bounds; player marker present. Snapshot for fixed camera/position. Run in CI or `make test`.
 - **Reference:** `am_map.c` (automap); we’re not doing BSP yet, just raw linedefs.
 - **Deliverable:** See E1M1 outline and player position from above; player doesn’t move yet.
+- **Status:** Not started.
 
 ### 4.1 — First-person “wireframe” or minimal 3D
 - **Goal:** First-person view: only walls (no textures), e.g. wireframe or flat-shaded segments.
@@ -125,6 +139,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq for fixed player (x, y, angle) and level outputs segment list (non-empty, bounded by screen); changing angle changes segment order or set. Snapshot for one or two view angles. Run in CI or `make test`.
 - **Reference:** `r_main.c` (viewx, viewy, viewangle, projection); `r_bsp.c` (BSP walk); `r_segs.c` (R_StoreWallRange); `r_draw.c` (column drawing). For MVP we can do a single-angle projection and no ceiling/floor.
 - **Deliverable:** First-person view of E1M1 walls (wireframe or flat segments), no movement yet.
+- **Status:** Not started.
 
 ### 4.2 — BSP-based visibility (optional but recommended)
 - **Goal:** Correct back-to-front or BSP order so walls don’t overlap wrongly.
@@ -134,6 +149,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: BSP traversal order (e.g. subsector order) differs from non-BSP; known view position yields deterministic segment list; no duplicate or reversed segs. Snapshot for a few viewpoints. Run in CI or `make test`.
 - **Reference:** `r_bsp.c` (`R_RenderBSPNode`), `r_segs.c`; `mapnode_t` (NF_SUBSECTOR), `mapsubsector_t`, `mapseg_t`.
 - **Deliverable:** First-person view with correct occlusion for E1M1.
+- **Status:** Not started.
 
 ### 4.3 — Floors and ceilings (flat shading)
 - **Goal:** Draw sector floors and ceilings (single color per sector, no textures).
@@ -143,6 +159,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq output includes floor/ceiling spans or sector colors for visible subsectors; span bounds and light/color consistent with sector data. Snapshot for fixed view. Run in CI or `make test`.
 - **Reference:** `r_plane.c` (floors/ceilings); `sector_t` (floorheight, ceilingheight, lightlevel).
 - **Deliverable:** First-person view with solid floor and ceiling colors per sector.
+- **Status:** Not started.
 
 ---
 
@@ -156,6 +173,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq movement (forward/back/strafe/turn) updates position and angle; collision prevents player from crossing blocking linedefs (unit test with minimal level); sequence of tics from fixed state yields reproducible final state. Run in CI or `make test`.
 - **Reference:** `p_user.c` (`P_PlayerThink`), `G_BuildTiccmd`; `p_mobj.c` / `p_map.c` (movement, collision); `d_ticcmd.h` (ticcmd_t: forwardmove, sidemove, angle delta).
 - **Deliverable:** Walk and turn in E1M1; no clipping through walls.
+- **Status:** Not started.
 
 ### 5.1 — One weapon and firing (optional)
 - **Goal:** Press fire (keyboard only, e.g. Ctrl or dedicated key); show a shot (hit-scan or simple projectile) and maybe a HUD change.
@@ -165,6 +183,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq fire with clear line of sight hits expected target or wall distance; ammo decrements; hit state or damage applied. Snapshot or assertion for a few scenarios (no target, hit thing). Run in CI or `make test`.
 - **Reference:** `p_pspr.c` (weapon sprites); `p_map.c` (P_AimLineAttack, P_LineAttack); `p_inter.c` (damage).
 - **Deliverable:** Fire key causes a hit check; can damage/kill one enemy type if we add it next.
+- **Status:** Not started.
 
 ### 5.2 — One enemy type and basic AI (optional)
 - **Goal:** E1M1 things: spawn one enemy type (e.g. zombie); simple AI (face player, move toward, or one attack).
@@ -174,6 +193,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq enemy AI (e.g. move toward player) and attack logic; player health decreases when hit; enemy state (position, health) updates each tic. Snapshot for a short sequence. Run in CI or `make test`.
 - **Reference:** `p_enemy.c`, `info.c` (mobjinfo); `p_mobj.c` (P_NightmareRespawn, movement); `p_tick.c` (thinkers).
 - **Deliverable:** At least one enemy in E1M1 that can damage the player; optional: player can kill it (reuse 5.1).
+- **Status:** Not started.
 
 ---
 
@@ -186,6 +206,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq frame includes `hud` with correct health (and ammo when applicable) from state; after damage or ammo change, HUD values match. Assertion or snapshot. Run in CI or `make test`.
 - **Reference:** `st_stuff.c` (ST_Drawer); `st_stuff.h`; status bar is 32px high in Doom.
 - **Deliverable:** Minimal HUD so player can see health (and ammo if implemented).
+- **Status:** Not started.
 
 ### 6.1 — Pause and menu return
 - **Goal:** Escape pauses or opens menu; from menu, “Resume” or “New Game” / “Quit” work.
@@ -194,6 +215,7 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: Escape in game sets `menuactive` and shows ingame menu; Resume clears it; New Game resets level state; Quit sets quit flag. Key sequences for each path. Run in CI or `make test`.
 - **Reference:** `M_Responder` (Escape); `menuactive` in `doomstat.h`; ingame menu in `m_menu.c`.
 - **Deliverable:** Pause and resume; from menu, New Game restarts E1M1, Quit exits.
+- **Status:** Not started.
 
 ---
 
