@@ -266,6 +266,7 @@ class Handler(BaseHTTPRequestHandler):
                     "count_is_zero": count == 0,
                     "count_gt_0": count > 0,
                     "transforms": transforms,
+                    "transforms_zero": transforms == 0,
                     "transforms_one": transforms == 1,
                     "transforms_plural": transforms != 1,
                 }
@@ -317,6 +318,7 @@ class Handler(BaseHTTPRequestHandler):
                     "count_is_zero": count == 0,
                     "count_gt_0": count > 0,
                     "transforms": transforms,
+                    "transforms_zero": transforms == 0,
                     "transforms_one": transforms == 1,
                     "transforms_plural": transforms != 1,
                 }
@@ -363,11 +365,11 @@ class Handler(BaseHTTPRequestHandler):
                 query = parse_qs(urlparse(self.path).query)
                 raw_gen = (query.get("generations") or [None])[0]
                 try:
-                    n = max(1, min(500, int(raw_gen))) if raw_gen is not None else None
+                    n = max(1, min(500, int(raw_gen))) if raw_gen is not None else 50
                 except (TypeError, ValueError):
-                    n = None
+                    n = 50
                 rule110_out = ""
-                generations_used = None
+                generations_used = n
                 if n is not None:
                     cmd = JQ + [
                         "-n", "-r", "--argjson", "generations", str(n),
@@ -383,13 +385,33 @@ class Handler(BaseHTTPRequestHandler):
                     _log_jq_stderr(r.stderr or "")
                     if r.returncode == 0 and r.stdout:
                         rule110_out = r.stdout
-                        generations_used = n
                 # Pre-render counter and output block so the template needs only substitute_vars (no <If>)
                 counter_html = "No visitors" if count == 0 else str(count)
                 output_block = ""
                 if rule110_out:
                     escaped = html_module.escape(rule110_out)
-                    output_block = f'<h2>Output</h2>\n    <pre><code>{escaped}</code></pre>\n    '
+                    output_block = f'''<h2>Output</h2>
+    <pre id="rule110-pre"><code id="rule110-output">{escaped}</code></pre>
+    <script>
+    (function() {{
+      var el = document.getElementById("rule110-output");
+      if (!el) return;
+      var text = el.textContent;
+      if (!text) return;
+      var lines = text.split("\\n");
+      el.textContent = "";
+      var i = 0;
+      function showNext() {{
+        if (i < lines.length) {{
+          el.textContent += (i > 0 ? "\\n" : "") + lines[i];
+          i++;
+          setTimeout(showNext, 150);
+        }}
+      }}
+      setTimeout(showNext, 150);
+    }})();
+    </script>
+    '''
                 rule110_vars = {
                     "count": count,
                     "count_is_zero": count == 0,
