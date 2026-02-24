@@ -46,6 +46,7 @@
   "    <div class=\"header-left\">",
   "      <h1><a href=\"/\" style=\"text-decoration: none; color: inherit;\">jqyml</a></h1>",
   "      <a href=\"/rule110\" class=\"nav-link\">Rule 110</a>",
+  "      <a href=\"/fizzbuzz\" class=\"nav-link\">FizzBuzz</a>",
   "      <a href=\"/built_with\" class=\"built-with-link\">Built with</a>",
   "    </div>",
   "    <div class=\"counter-box\">Visitor count: <span id=\"count\" class=\"count\">—</span></div>",

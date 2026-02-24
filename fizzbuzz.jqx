@@ -4,9 +4,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Rule 110 - jqyml</title>
+    <title>FizzBuzz - jqyml</title>
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
-    <meta name="description" content="Rule 110 cellular automaton in jq. Turing complete.">
+    <meta name="description" content="FizzBuzz in jq: 1 to n, Fizz/Buzz/FizzBuzz.">
     <style>
         * { box-sizing: border-box; }
         body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #f8f8f8; }
@@ -44,14 +44,17 @@
         <div class="counter-box">Visitor count: <span id="count" class="count">{counter_html}</span></div>
     </header>
 
-    <h1>Rule 110</h1>
-    <p>Rule 110 is a one-dimensional cellular automaton: each cell looks at itself and its left and right neighbours, and the rule (111→0, 110→1, 101→1, 100→0, 011→1, 010→1, 001→1, 000→0) gives the next row. It's Turing complete. This page runs it in <strong>jq</strong>.</p>
+    <h1>FizzBuzz</h1>
+    <p>Classic FizzBuzz: for 1 to <em>n</em>, print the number, or "Fizz" (multiples of 3), "Buzz" (multiples of 5), or "FizzBuzz" (multiples of 15). This page runs it in <strong>jq</strong>.</p>
 
-    <form method="get" action="/rule110">
-        <label for="generations">Generations (1-500):</label>
-        <input type="number" id="generations" name="generations" min="1" max="500" value="{generations_display}" placeholder="50">
+    <form method="get" action="/fizzbuzz">
+        <label for="n">Up to (1–500):</label>
+        <input type="number" id="n" name="n" min="1" max="500" value="{n_display}" placeholder="30">
         <button type="submit">Run</button>
     </form>
+
+    <h2>Code</h2>
+    <pre><code>{code_snippet}</code></pre>
 
     {output_block}
 </body>

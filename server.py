@@ -134,6 +134,14 @@ RULE110_JQX = JQ + [
     "--rawfile", "footer", _EMPTY_JQX,
     "-f", os.path.join(APP_ROOT, "jqx.jq"),
 ]
+FIZZBUZZ_JQ = JQ + ["-n", "-r", "-f", os.path.join(APP_ROOT, "fizzbuzz.jq")]
+FIZZBUZZ_JQX = JQ + [
+    "-r", "--rawfile", "tmpl", os.path.join(APP_ROOT, "fizzbuzz.jqx"),
+    "--rawfile", "header", _EMPTY_JQX,
+    "--rawfile", "head", _EMPTY_JQX,
+    "--rawfile", "footer", _EMPTY_JQX,
+    "-f", os.path.join(APP_ROOT, "jqx.jq"),
+]
 PARSE_JQ = JQ + ["-f", os.path.join(APP_ROOT, "parse.jq")]
 
 
@@ -148,6 +156,8 @@ def parse_route(method: str, path: str, body: str) -> dict:
         return {"action": "built_with"}
     if method == "GET" and p == "/rule110":
         return {"action": "rule110"}
+    if method == "GET" and p == "/fizzbuzz":
+        return {"action": "fizzbuzz"}
     if method == "GET" and p == "/admin":
         return {"action": "unauthorized"}
     if method == "GET" and p == "/state":
@@ -438,6 +448,77 @@ class Handler(BaseHTTPRequestHandler):
                 status = 200 if r.returncode == 0 else 500
             except Exception as e:
                 logger.exception("rule110 failed")
+                out, status = str(e), 500
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(out.encode("utf-8"))
+        elif route["action"] == "fizzbuzz":
+            try:
+                state = self._get_current_state()
+                count = state.get("counter", 0)
+                query = parse_qs(urlparse(self.path).query)
+                raw_n = (query.get("n") or [None])[0]
+                try:
+                    n = max(1, min(500, int(raw_n))) if raw_n is not None else 30
+                except (TypeError, ValueError):
+                    n = 30
+                n_used = n
+                run_requested = raw_n is not None
+                fizzbuzz_out = ""
+                if run_requested:
+                    cmd = JQ + [
+                        "-n", "-r", "--argjson", "n", str(n),
+                        "-f", os.path.join(APP_ROOT, "fizzbuzz.jq"),
+                    ]
+                    r = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        cwd=APP_ROOT,
+                    )
+                    _log_jq_stderr(r.stderr or "")
+                    if r.returncode == 0 and r.stdout:
+                        fizzbuzz_out = r.stdout
+                counter_html = "No visitors" if count == 0 else str(count)
+                output_block = ""
+                if fizzbuzz_out:
+                    escaped = html_module.escape(fizzbuzz_out)
+                    output_block = f'''<h2>Output</h2>
+    <pre id="fizzbuzz-pre"><code id="fizzbuzz-output">{escaped}</code></pre>
+    '''
+                code_snippet = ""
+                try:
+                    with open(os.path.join(APP_ROOT, "fizzbuzz.jq"), encoding="utf-8") as f:
+                        code_snippet = html_module.escape(f.read())
+                except OSError:
+                    code_snippet = "(fizzbuzz.jq not found)"
+                fizzbuzz_vars = {
+                    "count": count,
+                    "count_is_zero": count == 0,
+                    "count_gt_0": count > 0,
+                    "n": n_used,
+                    "n_display": str(n_used),
+                    "output": html_module.escape(fizzbuzz_out) if fizzbuzz_out else "",
+                    "has_output": bool(fizzbuzz_out),
+                    "counter_html": counter_html,
+                    "output_block": output_block,
+                    "code_snippet": code_snippet,
+                }
+                r = subprocess.run(
+                    FIZZBUZZ_JQX,
+                    input=json.dumps(fizzbuzz_vars),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=APP_ROOT,
+                )
+                _log_jq_stderr(r.stderr or "")
+                out = r.stdout if r.returncode == 0 else r.stderr or "error"
+                status = 200 if r.returncode == 0 else 500
+            except Exception as e:
+                logger.exception("fizzbuzz failed")
                 out, status = str(e), 500
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
