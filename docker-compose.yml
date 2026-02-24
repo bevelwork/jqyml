@@ -8,6 +8,9 @@ services:
       retries: 3
       start_period: 10s
     volumes:
+      # Mount app code so edits are reflected without rebuild (Python and jq subprocesses read files at runtime)
+      - .:/app
+      # Override /app/state with named volume so state is persisted and not overwritten by the bind mount
       - jqyml_state:/app/state
   caddy:
     image: caddy:alpine
