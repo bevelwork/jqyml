@@ -179,7 +179,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq movement (forward/back/strafe/turn) updates position and angle; collision prevents player from crossing blocking linedefs (unit test with minimal level); sequence of tics from fixed state yields reproducible final state. Run in CI or `make test`.
 - **Reference:** `p_user.c` (`P_PlayerThink`), `G_BuildTiccmd`; `p_mobj.c` / `p_map.c` (movement, collision); `d_ticcmd.h` (ticcmd_t: forwardmove, sidemove, angle delta).
 - **Deliverable:** Walk and turn in E1M1; no clipping through walls.
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** game_tick applies Up/Down/Left/Right; _norm_angle, _cos/_sin for movement; _point_inside_level bbox clamp; test-doom-jq-movement.
 
 ### 5.1 — One weapon and firing (optional)
 - **Goal:** Press fire (keyboard only, e.g. Ctrl or dedicated key); show a shot (hit-scan or simple projectile) and maybe a HUD change.
@@ -212,7 +213,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: jq frame includes `hud` with correct health (and ammo when applicable) from state; after damage or ammo change, HUD values match. Assertion or snapshot. Run in CI or `make test`.
 - **Reference:** `st_stuff.c` (ST_Drawer); `st_stuff.h`; status bar is 32px high in Doom.
 - **Deliverable:** Minimal HUD so player can see health (and ammo if implemented).
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** frame.view3d includes hud: { health }; client draws HP at top-left.
 
 ### 6.1 — Pause and menu return
 - **Goal:** Escape pauses or opens menu; from menu, “Resume” or “New Game” / “Quit” work.
@@ -221,7 +223,8 @@ Every milestone includes a **Tests / regression** step: list and add tests (e.g.
   - **Tests / regression:** List and add tests: Escape in game sets `menuactive` and shows ingame menu; Resume clears it; New Game resets level state; Quit sets quit flag. Key sequences for each path. Run in CI or `make test`.
 - **Reference:** `M_Responder` (Escape); `menuactive` in `doomstat.h`; ingame menu in `m_menu.c`.
 - **Deliverable:** Pause and resume; from menu, New Game restarts E1M1, Quit exits.
-- **Status:** Not started.
+- **Status:** Done.
+- **Notes:** Escape sets menuactive + ingame menu; menu_tick handles Resume/New Game/Quit DOOM.
 
 ---
 

@@ -1,0 +1,7 @@
+{
+  "name": "Up+Down cancels to no movement",
+  "initial": "game_center",
+  "steps": [
+    { "keys": ["Up", "Down"], "expect": { "player": { "x": 128, "y": 128, "angle": 90 } } }
+  ]
+}

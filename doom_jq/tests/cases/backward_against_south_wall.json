@@ -1,0 +1,7 @@
+{
+  "name": "backward against south wall (no movement)",
+  "initial": "game_south_wall",
+  "steps": [
+    { "keys": ["Down"], "expect": { "player": { "x": "~128", "y": 0, "angle": 90 } } }
+  ]
+}

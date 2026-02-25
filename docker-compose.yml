@@ -2,11 +2,11 @@ services:
   jqyml:
     build: .
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/state', timeout=2)"]
+      test: ["CMD", "curl", "-f", "-s", "-o", "/dev/null", "--connect-timeout", "2", "--max-time", "5", "http://127.0.0.1:8888/state"]
       interval: 5s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     volumes:
       # Mount app code so edits are reflected without rebuild (Python and jq subprocesses read files at runtime)
       - .:/app

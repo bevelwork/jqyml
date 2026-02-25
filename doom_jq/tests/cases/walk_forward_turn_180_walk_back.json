@@ -1,0 +1,9 @@
+{
+  "name": "walk forward, turn 180°, walk forward back to start",
+  "initial": "game_center",
+  "steps": [
+    { "keys": ["Up"], "repeat": 4 },
+    { "keys": ["Left"], "repeat": 30 },
+    { "keys": ["Up"], "repeat": 4, "expect": { "player": { "x": "~128", "y": "~128", "angle": "~270" } } }
+  ]
+}

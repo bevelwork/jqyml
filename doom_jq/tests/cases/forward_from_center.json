@@ -1,0 +1,7 @@
+{
+  "name": "forward from center",
+  "initial": "game_center",
+  "steps": [
+    { "keys": ["Up"], "expect": { "player": { "x": "~128", "y": "~136", "angle": 90 } } }
+  ]
+}

@@ -1,4 +1,4 @@
-.PHONY: run test test-jqx test-state test-anchors test-server test-speed test-doom-jq test-doom-jq-frame test-doom-jq-loop test-doom-jq-game test-doom-jq-runner speed up send docker-up docker-down docker-send
+.PHONY: run test test-jqx test-state test-anchors test-server test-speed test-doom-jq test-doom-jq-frame test-doom-jq-loop test-doom-jq-game test-doom-jq-rig test-doom-jq-runner test-doom-jq-wad speed up send docker-up docker-down docker-send
 
 JQYML_DIR := $(CURDIR)
 PORT := 8888
@@ -78,6 +78,12 @@ test-doom-jq-game-level:
 	if ! echo "$$out" | jq -e '.state.mode == "game" and (.state.level | type == "object") and (.state.level.vertexes | length == 4) and .state.player.x == 128 and .state.player.y == 128 and .state.player.angle == 90 and .state.player.health == 100' >/dev/null 2>&1; then echo "  FAILED (level/player spawn assertion)"; echo "$$out" | jq .; exit 1; fi; \
 	if ! echo "$$out" | jq -e '.frame.map != null and (.frame.map.lines | length == 4) and .frame.map.player.x == 128 and .frame.map.player.y == 128 and .frame.map.player.angle == 90' >/dev/null 2>&1; then echo "  FAILED (Phase 4.0 map frame assertion)"; echo "$$out" | jq .; exit 1; fi; \
 	echo "  OK"
+test-doom-jq-movement:
+	@echo "Testing doom_jq game.jq (Phase 5.0 movement)..."; \
+	out=$$(cd $(JQYML_DIR) && jq -L doom_jq/jq -f doom_jq/jq/game.jq -c < doom_jq/tests/p5_move_up.json 2>/dev/null); ret=$$?; \
+	if [ $$ret -ne 0 ]; then echo "  FAILED (jq exit $$ret)"; exit 1; fi; \
+	if ! echo "$$out" | jq -e '.state.player.y > 128 and .state.player.y < 140 and .state.player.angle == 90' >/dev/null 2>&1; then echo "  FAILED (Up key should increase y)"; echo "$$out" | jq .state.player; exit 1; fi; \
+	echo "  OK"
 test-doom-jq-runner:
 	@echo "Testing doom_jq runner.py (--headless, --loop --headless)..."; \
 	cd $(JQYML_DIR) && python3 doom_jq/runner.py --headless 2>/dev/null; ret1=$$?; \
@@ -91,8 +97,13 @@ test-doom-jq-wad:
 	python3 $(DOOM_JQ_DIR)/tools/wad2json.py --validate $(DOOM_JQ_DIR)/data/e1m1.json 2>/dev/null; ret=$$?; \
 	if [ $$ret -ne 0 ]; then echo "  FAILED (e1m1.json schema)"; exit 1; fi; \
 	echo "  OK"
+test-doom-jq-rig:
+	@echo "Testing doom_jq game rig (input sequences)..."; \
+	python3 $(JQYML_DIR)/doom_jq/tests/game_rig.py $(JQYML_DIR)/doom_jq/tests/cases/*.json; ret=$$?; \
+	if [ $$ret -ne 0 ]; then echo "  FAILED (game rig)"; exit 1; fi; \
+	echo "  OK"
 
-test-doom-jq: test-doom-jq-frame test-doom-jq-loop test-doom-jq-game test-doom-jq-game-level test-doom-jq-runner test-doom-jq-wad
+test-doom-jq: test-doom-jq-frame test-doom-jq-loop test-doom-jq-game test-doom-jq-game-level test-doom-jq-movement test-doom-jq-rig test-doom-jq-runner test-doom-jq-wad
 	@echo "All doom_jq tests passed."
 
 # Run YAML parser and jqx tests.

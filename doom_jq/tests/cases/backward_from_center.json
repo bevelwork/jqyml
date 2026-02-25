@@ -1,0 +1,7 @@
+{
+  "name": "backward from center",
+  "initial": "game_center",
+  "steps": [
+    { "keys": ["Down"], "expect": { "player": { "x": "~128", "y": "~120", "angle": 90 } } }
+  ]
+}

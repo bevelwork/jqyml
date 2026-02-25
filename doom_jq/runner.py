@@ -61,6 +61,10 @@ def validate_frame(obj: dict | None) -> bool:
             return False
         if "player" not in view3d or not isinstance(view3d["player"], dict):
             return False
+    hud = obj.get("hud")
+    if hud is not None:
+        if not isinstance(hud, dict) or "health" not in hud:
+            return False
     return True
 
 
